@@ -359,6 +359,20 @@ export async function commitImport(
     },
   });
 
+  // Tell each agency about their own passports, once the batch is committed. One email per
+  // agency carrying a count and a link — never a list of names or numbers, and never a hint
+  // that anyone else was in the same file.
+  const bookedByAgency = new Map<string, number>();
+  for (const row of toBook.slice(0, booked)) {
+    if (!row.agencyId) continue;
+    bookedByAgency.set(row.agencyId, (bookedByAgency.get(row.agencyId) ?? 0) + 1);
+  }
+
+  const { notifyPassportsBooked } = await import('@/lib/notifications');
+  for (const [agency, count] of bookedByAgency) {
+    await notifyPassportsBooked(actor, new ObjectId(agency), count);
+  }
+
   return {
     batchId: batchId.toHexString(),
     booked,

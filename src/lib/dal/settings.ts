@@ -19,6 +19,28 @@ import { writeAudit } from './audit';
 import { ValidationError } from './errors';
 
 /**
+ * Generic access to a settings document, for callers outside this file — the notifications
+ * module in particular, which owns its own shape but must not reach for a collection
+ * handle itself.
+ */
+export async function getSetting<T>(key: string): Promise<T | null> {
+  const collection = await settings();
+  const doc = await collection.findOne({ _id: key });
+  return (doc?.value as T) ?? null;
+}
+
+export async function setSetting<T>(actor: Actor, key: string, value: T): Promise<T> {
+  assertAdmin(actor);
+  const collection = await settings();
+  await collection.updateOne(
+    { _id: key },
+    { $set: { value, updatedAt: new Date(), updatedBy: actor.userId } },
+    { upsert: true },
+  );
+  return value;
+}
+
+/**
  * The export template. Falls back to the shipped default until it has been edited, so a
  * fresh install exports the right format without anyone configuring anything.
  */

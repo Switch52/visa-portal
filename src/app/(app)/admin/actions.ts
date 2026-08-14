@@ -144,6 +144,20 @@ export async function saveDisplayRateAction(_prev: FormState, formData: FormData
   return state;
 }
 
+/** Which emails the portal sends. Turning one off affects nothing else. */
+export async function saveNotificationsAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const state = await run(async (actor) => {
+    const { saveNotificationSettings } = await import('@/lib/notifications');
+    await saveNotificationSettings(actor, {
+      'user.invited': formData.get('userInvited') === 'on',
+      'passports.booked': formData.get('passportsBooked') === 'on',
+      appUrl: String(formData.get('appUrl') ?? '').trim() || undefined,
+    });
+  });
+  revalidatePath('/admin/settings/notifications');
+  return state;
+}
+
 export async function resetExportTemplateAction(): Promise<void> {
   await run(async (actor) => {
     const { resetExportTemplate } = await import('@/lib/dal/settings');

@@ -118,6 +118,12 @@ export async function inviteUser(actor: Actor, input: InviteUserInput): Promise<
       agencyId: doc.agencyId,
       after: { email: doc.email, role: doc.role },
     });
+
+    // After the account exists, and never in a way that can undo it: a mail provider
+    // being down must not mean the invite failed.
+    const { notifyUserInvited } = await import('@/lib/notifications');
+    await notifyUserInvited(actor, { email: doc.email, name: doc.name, agencyId: doc.agencyId });
+
     return toSummary({ ...doc, _id: result.insertedId } as UserDoc);
   } catch (error) {
     if (isDuplicateKey(error)) {
@@ -158,6 +164,18 @@ export async function setUserActive(actor: Actor, id: ObjectId, active: boolean)
     after: { active },
   });
   return toSummary(doc);
+}
+
+/**
+ * The email addresses to notify for one agency.
+ *
+ * Deliberately narrow: it returns addresses and nothing else, and only for the agency
+ * asked about — a notification must never become a way to enumerate anybody.
+ */
+export async function listNotificationRecipients(agencyId: ObjectId): Promise<string[]> {
+  const collection = await users();
+  const docs = await collection.find(notDeleted({ agencyId, active: true })).toArray();
+  return docs.map((doc) => doc.email);
 }
 
 export async function recordLogin(userId: ObjectId): Promise<void> {

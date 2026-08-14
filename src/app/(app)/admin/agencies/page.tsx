@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,15 +12,17 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { requireAdmin } from '@/lib/auth/current-user';
-import { listAgencies } from '@/lib/dal/agencies';
+import { getAgencyRows } from '@/lib/dal/dashboard';
+import { formatMoney } from '@/lib/money';
 
 import { startViewAsAction } from '../../actions';
 import { setAgencyActiveAction } from '../actions';
 import { NewAgencyForm } from './new-agency-form';
 
+/** One row per agency: what they have sent, what is booked, and what they owe. */
 export default async function AgenciesPage() {
   const actor = await requireAdmin();
-  const agencies = await listAgencies(actor);
+  const agencies = await getAgencyRows(actor);
 
   return (
     <div className="space-y-6">
@@ -42,8 +46,10 @@ export default async function AgenciesPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead>Contact</TableHead>
-                <TableHead>Default currency</TableHead>
+                <TableHead className="text-right">Passports</TableHead>
+                <TableHead className="text-right">Booked</TableHead>
+                <TableHead className="text-right">On hold</TableHead>
+                <TableHead className="text-right">Owed</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -51,19 +57,33 @@ export default async function AgenciesPage() {
             <TableBody>
               {agencies.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-muted-foreground">
+                  <TableCell colSpan={7} className="text-muted-foreground">
                     No agencies yet.
                   </TableCell>
                 </TableRow>
               ) : (
                 agencies.map((agency) => (
                   <TableRow key={agency.id}>
-                    <TableCell className="font-medium">{agency.name}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {agency.contactName ?? '—'}
-                      {agency.contactEmail ? ` · ${agency.contactEmail}` : ''}
+                    <TableCell className="font-medium">
+                      <Link href={`/admin/agencies/${agency.id}`} className="hover:underline">
+                        {agency.name}
+                      </Link>
                     </TableCell>
-                    <TableCell>{agency.defaultCurrency}</TableCell>
+                    <TableCell className="text-right tabular-nums">{agency.submitted}</TableCell>
+                    <TableCell className="text-right tabular-nums">{agency.booked}</TableCell>
+                    <TableCell className="text-right tabular-nums">{agency.onHold}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {agency.balances.length === 0
+                        ? '—'
+                        : agency.balances
+                            .map((balance) =>
+                              formatMoney({
+                                amountMinor: balance.outstandingMinor,
+                                currency: balance.currency,
+                              }),
+                            )
+                            .join(' · ')}
+                    </TableCell>
                     <TableCell>
                       <Badge variant={agency.active ? 'default' : 'secondary'}>
                         {agency.active ? 'Active' : 'Inactive'}

@@ -30,6 +30,7 @@ export default async function AppLayout({ children }: LayoutProps<'/'>) {
         { href: '/admin/payments', label: 'Payments' },
         { href: '/admin/balances', label: 'Balances' },
         { href: '/admin/routes', label: 'Routes' },
+        { href: '/admin/audit', label: 'Audit' },
         { href: '/admin/settings', label: 'Settings' },
       ]
     : [

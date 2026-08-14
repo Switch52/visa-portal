@@ -77,6 +77,100 @@ export interface AuditEntry {
   metadata?: Record<string, unknown> | null;
 }
 
+export interface AuditFilters {
+  action?: string;
+  entity?: string;
+  agencyId?: ObjectId;
+  actorId?: ObjectId;
+  from?: Date;
+  to?: Date;
+  limit?: number;
+  skip?: number;
+}
+
+export interface AuditView {
+  id: string;
+  at: Date;
+  action: string;
+  entity: string;
+  entityId: string | null;
+  agencyId: string | null;
+  actorId: string | null;
+  actorRole: string;
+  onBehalfOfAgencyId: string | null;
+  before: unknown;
+  after: unknown;
+  metadata: Record<string, unknown> | null;
+}
+
+/**
+ * Read the log. Admin-only: it spans every agency by definition, so there is no scoped
+ * version of it — an agency-shaped actor is refused outright rather than filtered.
+ *
+ * What comes back was redacted on the way in, so nothing here can leak a passport number
+ * or a name even though the entries describe records that have them.
+ */
+export async function listAuditEntries(actor: Actor, filters: AuditFilters = {}): Promise<AuditView[]> {
+  const { assertAdmin } = await import('./actor');
+  assertAdmin(actor);
+
+  const filter: Record<string, unknown> = {};
+  if (filters.action) filter.action = filters.action;
+  if (filters.entity) filter.entity = filters.entity;
+  if (filters.agencyId) filter.agencyId = filters.agencyId;
+  if (filters.actorId) filter.actorId = filters.actorId;
+  if (filters.from || filters.to) {
+    filter.at = {
+      ...(filters.from ? { $gte: filters.from } : {}),
+      ...(filters.to ? { $lte: filters.to } : {}),
+    };
+  }
+
+  const collection = await auditLog();
+  const docs = await collection
+    .find(filter)
+    .sort({ at: -1 })
+    .skip(filters.skip ?? 0)
+    .limit(Math.min(filters.limit ?? 100, 500))
+    .toArray();
+
+  return docs.map((doc) => ({
+    id: doc._id.toHexString(),
+    at: doc.at,
+    action: doc.action,
+    entity: doc.entity,
+    entityId: doc.entityId?.toHexString() ?? null,
+    agencyId: doc.agencyId?.toHexString() ?? null,
+    actorId: doc.actorId?.toHexString() ?? null,
+    actorRole: doc.actorRole,
+    onBehalfOfAgencyId: doc.onBehalfOfAgencyId?.toHexString() ?? null,
+    before: doc.before ?? null,
+    after: doc.after ?? null,
+    metadata: doc.metadata ?? null,
+  }));
+}
+
+export async function countAuditEntries(actor: Actor, filters: AuditFilters = {}): Promise<number> {
+  const { assertAdmin } = await import('./actor');
+  assertAdmin(actor);
+
+  const collection = await auditLog();
+  const filter: Record<string, unknown> = {};
+  if (filters.action) filter.action = filters.action;
+  if (filters.agencyId) filter.agencyId = filters.agencyId;
+  return collection.countDocuments(filter);
+}
+
+/** The distinct actions present, so the filter offers only what exists. */
+export async function listAuditActions(actor: Actor): Promise<string[]> {
+  const { assertAdmin } = await import('./actor');
+  assertAdmin(actor);
+
+  const collection = await auditLog();
+  const actions = await collection.distinct('action');
+  return actions.sort();
+}
+
 export async function writeAudit(
   actor: Actor,
   entry: AuditEntry,

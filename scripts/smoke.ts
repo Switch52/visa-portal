@@ -395,6 +395,61 @@ async function main(): Promise<void> {
       !agencyLedgerHtml.includes('Record a payment'),
   );
 
+  // --- milestone 6: dashboards, audit log, notifications ----------------------------
+  const adminDashboard = await fetch(`${BASE}/`, { headers: cookie(adminSession.token) });
+  const adminDashboardHtml = await adminDashboard.text();
+  check(
+    'the admin home shows the operational tiles',
+    adminDashboardHtml.includes('Ready to hand off') &&
+      adminDashboardHtml.includes('Added, not yet booked') &&
+      adminDashboardHtml.includes('Recent activity'),
+  );
+
+  const agencyDashboard = await fetch(`${BASE}/`, { headers: cookie(agencySession.token) });
+  const agencyDashboardHtml = await agencyDashboard.text();
+  check(
+    'the agency home shows their own figures and no admin tiles',
+    agencyDashboardHtml.includes('Smoke Agency') &&
+      agencyDashboardHtml.includes('What you owe') &&
+      !agencyDashboardHtml.includes('Ready to hand off') &&
+      !agencyDashboardHtml.includes('Duplicates blocked'),
+  );
+
+  const auditPage = await fetch(`${BASE}/admin/audit`, { headers: cookie(adminSession.token) });
+  const auditHtml = await auditPage.text();
+  check(
+    'the audit log lists what has happened, with no passport numbers in it',
+    auditPage.status === 200 && auditHtml.includes('Audit log') && !auditHtml.includes('A99887766'),
+  );
+
+  const auditAsAgency = await fetch(`${BASE}/admin/audit`, {
+    headers: cookie(agencySession.token),
+    redirect: 'manual',
+  });
+  check(
+    'an agency cannot open the audit log',
+    auditAsAgency.status === 307 || auditAsAgency.status === 302,
+    `status ${auditAsAgency.status}`,
+  );
+
+  const agenciesList = await fetch(`${BASE}/admin/agencies`, { headers: cookie(adminSession.token) });
+  const agenciesHtml = await agenciesList.text();
+  check(
+    'the agencies list carries counts and what each one owes',
+    agenciesHtml.includes('Smoke Agency') && agenciesHtml.includes('Booked') && agenciesHtml.includes('Owed'),
+  );
+
+  const notificationsPage = await fetch(`${BASE}/admin/settings/notifications`, {
+    headers: cookie(adminSession.token),
+  });
+  const notificationsHtml = await notificationsPage.text();
+  check(
+    'the notification settings render with both emails listed',
+    notificationsPage.status === 200 &&
+      notificationsHtml.includes('Welcome an invited user') &&
+      notificationsHtml.includes('Tell an agency their passports are booked'),
+  );
+
   const settings = await fetch(`${BASE}/admin/settings/export`, { headers: cookie(adminSession.token) });
   const settingsHtml = await settings.text();
   check(

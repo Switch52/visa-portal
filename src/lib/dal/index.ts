@@ -20,7 +20,27 @@ export {
   ValidationError,
 } from './errors';
 
-export { writeAudit, redact, type AuditAction, type AuditEntry } from './audit';
+export {
+  countAuditEntries,
+  listAuditActions,
+  listAuditEntries,
+  redact,
+  writeAudit,
+  type AuditAction,
+  type AuditEntry,
+  type AuditFilters,
+  type AuditView,
+} from './audit';
+
+export {
+  getAdminDashboard,
+  getAgencyDashboard,
+  getAgencyRows,
+  type ActivityEntry,
+  type AdminDashboard,
+  type AgencyDashboard,
+  type AgencyRow,
+} from './dashboard';
 
 export {
   createAgency,

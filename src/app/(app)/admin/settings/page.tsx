@@ -3,11 +3,17 @@ import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { requireAdmin } from '@/lib/auth/current-user';
 import { getDisplayRate, getExportTemplate } from '@/lib/dal/settings';
+import { getNotificationSettings } from '@/lib/notifications';
 
 /** The things that change without a deploy. */
 export default async function SettingsPage() {
   await requireAdmin();
-  const [template, rate] = await Promise.all([getExportTemplate(), getDisplayRate()]);
+  const [template, rate, notifications] = await Promise.all([
+    getExportTemplate(),
+    getDisplayRate(),
+    getNotificationSettings(),
+  ]);
+  const emailsOn = [notifications['user.invited'], notifications['passports.booked']].filter(Boolean).length;
 
   const settings = [
     {
@@ -19,6 +25,11 @@ export default async function SettingsPage() {
       href: '/admin/settings/rate',
       title: 'Display exchange rate',
       description: `${rate.rate} ${rate.quote} per ${rate.base}, last updated ${rate.updatedAt}. Used only to show an indicative figure beside a real amount.`,
+    },
+    {
+      href: '/admin/settings/notifications',
+      title: 'Notifications',
+      description: `${emailsOn} of 2 emails switched on. Sending happens after the work it describes has committed, so it can never undo anything.`,
     },
   ];
 
