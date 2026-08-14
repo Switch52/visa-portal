@@ -31,10 +31,13 @@ async function main(): Promise<void> {
   const center = arg('--center');
   const fee = arg('--fee');
   const currency = arg('--currency') ?? 'USD';
+  // A route can be set up before it opens — Alexandria today. It exists, carries a price,
+  // and is offered to nobody until it is made active.
+  const active = !process.argv.includes('--inactive');
 
   if (!center || !fee) {
     throw new Error(
-      'Usage: npm run seed-route -- --origin EGY --destination GRC --center "VFS Cairo" --fee 60 --currency USD\n' +
+      'Usage: npm run seed-route -- --origin EGY --destination GRC --center "Greece Cairo" --fee 60 --currency USD [--inactive]\n' +
         'The appointment center is part of what makes a route unique, so it cannot be guessed.',
     );
   }
@@ -56,10 +59,12 @@ async function main(): Promise<void> {
       appointmentCenter: center,
       feeMinor: amount.amountMinor,
       feeCurrency: amount.currency,
-      active: true,
+      active,
     });
 
-    console.log(`Created: ${route.displayLabel} at ${formatMoney(amount)}`);
+    console.log(
+      `Created: ${route.displayLabel} at ${formatMoney(amount)}${active ? '' : ' — not active yet'}`,
+    );
   } catch (error) {
     if (error instanceof ValidationError) {
       // Already there. Say which one, rather than failing a repeated deploy.
