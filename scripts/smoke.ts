@@ -51,8 +51,10 @@ async function main(): Promise<void> {
   const client = await getMongoClient();
 
   console.log('Applying migrations…');
-  const { up } = await import('../migrations/001_initial_collections');
-  await up(client.db('visa_portal_smoke'));
+  const { up: up001 } = await import('../migrations/001_initial_collections');
+  const { up: up002 } = await import('../migrations/002_bookings_and_charges');
+  await up001(client.db('visa_portal_smoke'));
+  await up002(client.db('visa_portal_smoke'));
 
   console.log('Seeding an admin, an agency and an agency user…');
   const { adminActor } = await import('@/lib/dal/actor');
@@ -293,6 +295,50 @@ async function main(): Promise<void> {
     'marking as added is the separate, deliberate step',
     marked.marked === 1 && afterMark.status === 'added',
     afterMark.status,
+  );
+
+  // --- milestone 4: the booking import ----------------------------------------------
+  const importsPage = await fetch(`${BASE}/admin/imports`, { headers: cookie(adminSession.token) });
+  const importsHtml = await importsPage.text();
+  check(
+    'the booking import screen renders',
+    importsPage.status === 200 && importsHtml.includes('Upload a booking file'),
+  );
+
+  // Drive a real import through the DAL, then check the app reflects it.
+  const bookingCsv = [
+    '"Passport Number","Appointment Date","Appointment Time","Location","Reference"',
+    '"A99887766","27/08/2026","09:30","VFS Cairo","SMOKE-1"',
+  ].join('\r\n');
+
+  const committed = await dal.commitImport(adminDalActor, {
+    buffer: Buffer.from(bookingCsv, 'utf8'),
+    filename: 'smoke-bookings.csv',
+  });
+  check('a booking file books the passport and raises its charge', committed.booked === 1, JSON.stringify(committed.charges));
+
+  const bookedPassport = await dal.getPassport(adminDalActor, new Oid(passportId));
+  check('the passport is booked afterwards', bookedPassport.status === 'booked', bookedPassport.status);
+
+  const reimport = await dal.commitImport(adminDalActor, {
+    buffer: Buffer.from(bookingCsv, 'utf8'),
+    filename: 'smoke-bookings.csv',
+  });
+  check('re-uploading the same file changes nothing', reimport.booked === 0 && Boolean(reimport.noop));
+
+  const agencyAfterBooking = await fetch(`${BASE}/passports`, { headers: cookie(agencySession.token) });
+  const agencyAfterHtml = await agencyAfterBooking.text();
+  check(
+    'the agency sees its passport as booked, without ever seeing a fee',
+    agencyAfterHtml.includes('Booked') && !agencyAfterHtml.includes('120.00'),
+  );
+
+  const undone = await dal.undoImport(adminDalActor, new Oid(committed.batchId));
+  const afterUndo = await dal.getPassport(adminDalActor, new Oid(passportId));
+  check(
+    'undoing the import reverts the passport and voids the charge',
+    undone.chargesVoided === 1 && afterUndo.status === 'added',
+    `${afterUndo.status}, charges voided ${undone.chargesVoided}`,
   );
 
   const settings = await fetch(`${BASE}/admin/settings/export`, { headers: cookie(adminSession.token) });

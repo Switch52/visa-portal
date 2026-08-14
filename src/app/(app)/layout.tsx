@@ -23,6 +23,7 @@ export default async function AppLayout({ children }: LayoutProps<'/'>) {
     ? [
         { href: '/', label: 'Home' },
         { href: '/admin/handoff', label: 'Handoff' },
+        { href: '/admin/imports', label: 'Bookings' },
         { href: '/admin/passports', label: 'Passports' },
         { href: '/admin/agencies', label: 'Agencies' },
         { href: '/admin/users', label: 'Users' },

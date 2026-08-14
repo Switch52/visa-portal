@@ -52,6 +52,20 @@ export {
 } from './routes';
 
 export {
+  commitImport,
+  getBookingForPassport,
+  hashFile,
+  listImportBatches,
+  previewImport,
+  undoImport,
+  type BatchSummary,
+  type CommitResult,
+  type ImportPreview,
+  type PreviewRow,
+  type UndoResult,
+} from './bookings';
+
+export {
   getExportRecords,
   getHandoffQueue,
   getHandoffSummary,

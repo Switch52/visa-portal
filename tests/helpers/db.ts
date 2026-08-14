@@ -1,6 +1,6 @@
 /**
  * Test harness: a real MongoDB, started as a single-node replica set so transactions
- * behave the way they do on Atlas, with migration 001 applied.
+ * behave the way they do on Atlas, with every migration applied in order.
  *
  * The tests run against the actual validators and the actual unique indexes, because
  * those are the things being tested — a mocked collection would prove nothing about
@@ -33,8 +33,11 @@ export async function startTestDb(): Promise<TestContext> {
   const { getMongoClient } = await import('@/lib/mongodb');
   const client = await getMongoClient();
 
-  const { up } = await import('../../migrations/001_initial_collections');
-  await up(client.db('visa_portal_test'));
+  // Migrations run in order, the same way `npm run migrate` applies them.
+  const { up: up001 } = await import('../../migrations/001_initial_collections');
+  const { up: up002 } = await import('../../migrations/002_bookings_and_charges');
+  await up001(client.db('visa_portal_test'));
+  await up002(client.db('visa_portal_test'));
 
   return {
     client,

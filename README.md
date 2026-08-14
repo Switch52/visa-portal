@@ -23,7 +23,7 @@ console instead of being emailed, so a local run needs no third-party service.
 | Script | What it does |
 |---|---|
 | `npm run dev` / `build` / `start` | The Next.js app |
-| `npm test` | Isolation, auth, database, paste, batch, export and handoff tests (139) |
+| `npm test` | Isolation, auth, database, paste, batch, export, handoff and import tests (170) |
 | `npm run smoke` | Boots the built app against a throwaway database and checks the real HTTP surface |
 | `npm run typecheck` / `lint` | TypeScript, ESLint |
 | `npm run migrate` | Apply migrations (`-- --status`, `-- --down <id>`) |
@@ -38,6 +38,8 @@ src/config/      Editable configuration: status flow and transitions, currencies
 src/lib/grid/    Columns, the spreadsheet paste parser, and row validation shared by
                  the browser and the server.
 src/lib/export/  The handoff CSV: the column template, RFC-4180 rendering, filenames.
+src/lib/import/  Reading booking files: the editable column mapping, and a parser that
+                 refuses a file it cannot read rather than importing part of it.
 src/lib/mongodb  The only module that opens a connection (cached for serverless).
 src/lib/db/      Typed collection handles. Unscoped, and off limits to the app.
 src/lib/dal/     The data-access layer. Every function takes the acting user.
@@ -102,7 +104,7 @@ normalized form is stored alongside the original.
 | 1 | Foundation: schema, DAL, OTP auth, invite-only users, isolation tests | ✅ |
 | 2 | Passports: grid entry, paste, duplicate rule, status flow | ✅ |
 | 3 | Routes & the handoff queue, CSV export | ✅ |
-| 4 | Bulk booking import | — |
+| 4 | Bulk booking import | ✅ parser needs real files to validate against |
 | 5 | Payments & ledgers | — |
 | 6 | Dashboards, audit log, view-as, notifications | — |
 | 7 | Migration + deploy | — |

@@ -123,6 +123,75 @@ export interface PassportDoc extends Timestamps {
   source?: PassportSourceRow | null;
 }
 
+export interface BookingDoc {
+  _id: ObjectId;
+  passportId: ObjectId;
+  agencyId: ObjectId;
+  /** A real instant, not a date-only value. */
+  appointmentAt: Date;
+  /** The center's timezone, recorded alongside so the instant can be read back locally. */
+  timezone: string;
+  location: string;
+  reference?: string | null;
+  importBatchId: ObjectId;
+  recordedBy: ObjectId | null;
+  createdAt: Date;
+  /**
+   * Set when the import that created this booking is undone. The row stays as evidence
+   * that it happened and was reversed, rather than vanishing from the record.
+   */
+  undoneAt?: Date | null;
+  undoneBy?: ObjectId | null;
+  /** The raw row it came from, so any value can be traced back to the file. */
+  source?: { file: string; sheet: string; rowNumber: number; raw: Record<string, string> } | null;
+}
+
+export interface ChargeDoc {
+  _id: ObjectId;
+  agencyId: ObjectId;
+  passportId: ObjectId;
+  bookingId: ObjectId;
+  routeId: ObjectId;
+  /**
+   * Copied from the route at the moment of booking, never read back through the route.
+   * Editing a route's price later must not rewrite what an agency already owes.
+   */
+  amountMinor: number;
+  currency: string;
+  chargedAt: Date;
+  createdBy: ObjectId | null;
+  importBatchId: ObjectId | null;
+  /** Reversal keeps the entry and marks it, so the ledger reads as history rather than edits. */
+  voidedAt?: Date | null;
+  voidedBy?: ObjectId | null;
+  voidReason?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export type ImportBatchStatus = 'committed' | 'undone';
+
+export interface ImportBatchDoc {
+  _id: ObjectId;
+  filename: string;
+  /** SHA-256 of the uploaded bytes: re-uploading the same file is recognised, not repeated. */
+  fileHash: string;
+  sheetName?: string | null;
+  uploadedBy: ObjectId | null;
+  uploadedAt: Date;
+  status: ImportBatchStatus;
+  counts: {
+    rowsInFile: number;
+    matched: number;
+    booked: number;
+    unmatched: number;
+    alreadyBooked: number;
+    skipped: number;
+  };
+  undoneAt?: Date | null;
+  undoneBy?: ObjectId | null;
+}
+
 export interface SessionDoc {
   _id: ObjectId;
   userId: ObjectId;

@@ -13,6 +13,9 @@ import { getDb, getMongoClient } from '@/lib/mongodb';
 import type {
   AgencyDoc,
   AuditLogDoc,
+  BookingDoc,
+  ChargeDoc,
+  ImportBatchDoc,
   OtpDoc,
   PassportDoc,
   RateLimitDoc,
@@ -27,6 +30,9 @@ export const COLLECTIONS = {
   users: 'users',
   routes: 'routes',
   passports: 'passports',
+  bookings: 'bookings',
+  charges: 'charges',
+  importBatches: 'import_batches',
   sessions: 'sessions',
   otps: 'otps',
   rateLimits: 'rate_limits',
@@ -52,6 +58,18 @@ export async function routes(): Promise<Collection<RouteDoc>> {
 
 export async function passports(): Promise<Collection<PassportDoc>> {
   return (await getDb()).collection<PassportDoc>(COLLECTIONS.passports);
+}
+
+export async function bookings(): Promise<Collection<BookingDoc>> {
+  return (await getDb()).collection<BookingDoc>(COLLECTIONS.bookings);
+}
+
+export async function charges(): Promise<Collection<ChargeDoc>> {
+  return (await getDb()).collection<ChargeDoc>(COLLECTIONS.charges);
+}
+
+export async function importBatches(): Promise<Collection<ImportBatchDoc>> {
+  return (await getDb()).collection<ImportBatchDoc>(COLLECTIONS.importBatches);
 }
 
 export async function sessions(): Promise<Collection<SessionDoc>> {
