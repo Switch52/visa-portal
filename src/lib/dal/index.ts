@@ -1,0 +1,62 @@
+/**
+ * The data-access layer. One way in.
+ *
+ * Every read and write takes the acting user and applies the agency scope itself. No
+ * route handler, server component or script touches the driver directly — ESLint blocks
+ * importing `@/lib/mongodb` or `@/lib/db/*` from anywhere but here and the migrations, so
+ * there is one place to audit and one place to fix.
+ */
+
+export type { Actor, ActorRole } from './actor';
+export { adminActor, agencyActor, systemActor, isAdmin, isViewingAs, scopeAgencyId } from './actor';
+
+export {
+  DalError,
+  DuplicatePassportError,
+  ForbiddenError,
+  NotAuthenticatedError,
+  NotFoundError,
+  ReadOnlySessionError,
+  ValidationError,
+} from './errors';
+
+export { writeAudit, redact, type AuditAction, type AuditEntry } from './audit';
+
+export {
+  createAgency,
+  getAgency,
+  getOwnAgency,
+  listAgencies,
+  setAgencyActive,
+  updateAgency,
+  type AgencySummary,
+} from './agencies';
+
+export {
+  getUser,
+  inviteUser,
+  listUsers,
+  setUserActive,
+  type UserSummary,
+} from './users';
+
+export {
+  buildDisplayLabel,
+  createRoute,
+  getRoute,
+  listRouteOptions,
+  listRoutes,
+  updateRoute,
+  type RouteDetail,
+  type RouteOption,
+} from './routes';
+
+export {
+  changePassportStatus,
+  countPassports,
+  createPassport,
+  getPassport,
+  listPassports,
+  type PassportFilters,
+  type PassportView,
+} from './passports';

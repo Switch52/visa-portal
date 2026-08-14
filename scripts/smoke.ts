@@ -1,0 +1,184 @@
+/**
+ * End-to-end smoke test: boot the built app against a throwaway database and check that
+ * the real HTTP surface behaves — pages render, unauthenticated requests are turned away,
+ * and an agency session cannot reach an admin screen.
+ *
+ * The unit tests prove the rules; this proves the thing actually runs.
+ *
+ *   npm run build && npm run smoke
+ */
+
+import { spawn, type ChildProcess } from 'node:child_process';
+
+import { MongoMemoryReplSet } from 'mongodb-memory-server';
+
+const PORT = Number(process.env.SMOKE_PORT ?? 3999);
+const BASE = `http://127.0.0.1:${PORT}`;
+
+let replSet: MongoMemoryReplSet | null = null;
+let server: ChildProcess | null = null;
+const results: { name: string; ok: boolean; detail?: string }[] = [];
+
+function check(name: string, ok: boolean, detail?: string): void {
+  results.push({ name, ok, detail });
+  console.log(`${ok ? '  ✔' : '  ✖'} ${name}${detail && !ok ? ` — ${detail}` : ''}`);
+}
+
+async function waitForServer(timeoutMs = 60_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`${BASE}/login`, { redirect: 'manual' });
+      if (response.status < 500) return;
+    } catch {
+      // not up yet
+    }
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  throw new Error('The server did not come up in time.');
+}
+
+async function main(): Promise<void> {
+  console.log('Starting a throwaway MongoDB…');
+  replSet = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
+  const uri = replSet.getUri();
+
+  process.env.MONGODB_URI = uri;
+  process.env.MONGODB_DB = 'visa_portal_smoke';
+  process.env.AUTH_SECRET = 'smoke-secret';
+
+  const { getMongoClient } = await import('@/lib/mongodb');
+  const client = await getMongoClient();
+
+  console.log('Applying migrations…');
+  const { up } = await import('../migrations/001_initial_collections');
+  await up(client.db('visa_portal_smoke'));
+
+  console.log('Seeding an admin, an agency and an agency user…');
+  const { adminActor } = await import('@/lib/dal/actor');
+  const dal = await import('@/lib/dal');
+  const { users } = await import('@/lib/db/collections');
+  const { createSession } = await import('@/lib/auth/session');
+
+  const now = new Date();
+  const userCollection = await users();
+  const { insertedId: adminId } = await userCollection.insertOne({
+    name: 'Smoke Admin',
+    email: 'admin@example.com',
+    emailNormalized: 'admin@example.com',
+    role: 'admin',
+    agencyId: null,
+    active: true,
+    createdAt: now,
+    updatedAt: now,
+  } as never);
+
+  const admin = adminActor(adminId);
+  const agency = await dal.createAgency(admin, { name: 'Smoke Agency', defaultCurrency: 'USD' });
+  const agencyUser = await dal.inviteUser(admin, {
+    name: 'Smoke Agent',
+    email: 'agent@example.com',
+    role: 'agency',
+    agencyId: agency.id,
+  });
+  await dal.createRoute(admin, {
+    originCountry: 'EGY',
+    destinationCountry: 'FRA',
+    appointmentCenter: 'VFS Cairo',
+    feeMinor: 12_000,
+    feeCurrency: 'USD',
+    active: true,
+  });
+
+  const { ObjectId } = await import('mongodb');
+  const adminSession = await createSession(adminId);
+  const agencySession = await createSession(new ObjectId(agencyUser.id));
+
+  console.log(`Starting the built app on ${BASE}…`);
+  server = spawn('npx', ['next', 'start', '-p', String(PORT)], {
+    env: { ...process.env },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  server.stderr?.on('data', (chunk: Buffer) => {
+    const text = chunk.toString();
+    if (text.includes('Error')) process.stderr.write(`    [server] ${text}`);
+  });
+
+  await waitForServer();
+  console.log('\nChecks:');
+
+  const cookie = (token: string) => ({ cookie: `vp_session=${token}` });
+
+  const login = await fetch(`${BASE}/login`);
+  check('the login page renders', login.status === 200, `status ${login.status}`);
+  const loginHtml = await login.text();
+  check(
+    'the login page asks for an email and says access is by invitation',
+    loginHtml.includes('Send code') && loginHtml.includes('invitation'),
+  );
+
+  const anonymous = await fetch(`${BASE}/`, { redirect: 'manual' });
+  check(
+    'an unauthenticated visitor is sent to the login page',
+    anonymous.status === 307 || anonymous.status === 302,
+    `status ${anonymous.status}`,
+  );
+
+  const adminHome = await fetch(`${BASE}/`, { headers: cookie(adminSession.token) });
+  const adminHomeHtml = await adminHome.text();
+  check('the admin home renders for an admin session', adminHome.status === 200, `status ${adminHome.status}`);
+  check(
+    'the admin home shows the cross-agency view',
+    adminHomeHtml.includes('Everything, across every agency'),
+  );
+
+  const agencyPage = await fetch(`${BASE}/admin/users`, {
+    headers: cookie(agencySession.token),
+    redirect: 'manual',
+  });
+  check(
+    'an agency session is turned away from an admin screen',
+    agencyPage.status === 307 || agencyPage.status === 302,
+    `status ${agencyPage.status}`,
+  );
+
+  const agencyHome = await fetch(`${BASE}/`, { headers: cookie(agencySession.token) });
+  const agencyHomeHtml = await agencyHome.text();
+  check('the agency home renders for an agency session', agencyHome.status === 200);
+  check(
+    'the agency home shows their own name and not the cross-agency view',
+    agencyHomeHtml.includes('Smoke Agency') && !agencyHomeHtml.includes('Everything, across every agency'),
+  );
+
+  const adminUsers = await fetch(`${BASE}/admin/users`, { headers: cookie(adminSession.token) });
+  const adminUsersHtml = await adminUsers.text();
+  check('the admin can see the user list', adminUsers.status === 200 && adminUsersHtml.includes('agent@example.com'));
+
+  const routes = await fetch(`${BASE}/admin/routes`, { headers: cookie(adminSession.token) });
+  const routesHtml = await routes.text();
+  check('the route and its fee are visible to the admin', routesHtml.includes('Egypt → France · VFS Cairo') && routesHtml.includes('120.00 USD'));
+
+  const agencyPassports = await fetch(`${BASE}/passports`, { headers: cookie(agencySession.token) });
+  const agencyPassportsHtml = await agencyPassports.text();
+  check(
+    'the agency passport list carries no fee and no other agency',
+    agencyPassports.status === 200 && !agencyPassportsHtml.includes('120.00') && !agencyPassportsHtml.includes('Everything, across'),
+  );
+
+  const failed = results.filter((r) => !r.ok);
+  console.log(`\n${results.length - failed.length}/${results.length} checks passed.`);
+  if (failed.length > 0) process.exitCode = 1;
+}
+
+main()
+  .catch((error) => {
+    console.error(error instanceof Error ? error.stack : error);
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    server?.kill('SIGTERM');
+    const { getMongoClient } = await import('@/lib/mongodb');
+    const client = await getMongoClient().catch(() => null);
+    await client?.close();
+    await replSet?.stop();
+  });
