@@ -419,6 +419,7 @@ async function bookOnePassport(
     // moment. A later price change must not rewrite what this agency owes.
     const charge: ChargeDoc = {
       _id: new ObjectId(),
+      type: 'charge',
       agencyId: passport.agencyId,
       passportId,
       bookingId,

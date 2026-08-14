@@ -294,7 +294,7 @@ describe('committing', () => {
     assert.ok(charge);
     assert.equal(charge.amountMinor, 12_000);
     assert.equal(charge.currency, 'USD');
-    assert.equal(charge.bookingId.toHexString(), booking._id.toHexString());
+    assert.equal(charge.bookingId?.toHexString(), booking._id.toHexString());
 
     const history = await ctx.dal.getPassportHistory(admin(), passportId!);
     assert.equal(history.at(-1)!.status, 'booked');

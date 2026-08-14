@@ -18,6 +18,7 @@ import type {
   ImportBatchDoc,
   OtpDoc,
   PassportDoc,
+  PaymentDoc,
   RateLimitDoc,
   RouteDoc,
   SessionDoc,
@@ -33,6 +34,7 @@ export const COLLECTIONS = {
   bookings: 'bookings',
   charges: 'charges',
   importBatches: 'import_batches',
+  payments: 'payments',
   sessions: 'sessions',
   otps: 'otps',
   rateLimits: 'rate_limits',
@@ -70,6 +72,10 @@ export async function charges(): Promise<Collection<ChargeDoc>> {
 
 export async function importBatches(): Promise<Collection<ImportBatchDoc>> {
   return (await getDb()).collection<ImportBatchDoc>(COLLECTIONS.importBatches);
+}
+
+export async function payments(): Promise<Collection<PaymentDoc>> {
+  return (await getDb()).collection<PaymentDoc>(COLLECTIONS.payments);
 }
 
 export async function sessions(): Promise<Collection<SessionDoc>> {

@@ -53,8 +53,10 @@ async function main(): Promise<void> {
   console.log('Applying migrations…');
   const { up: up001 } = await import('../migrations/001_initial_collections');
   const { up: up002 } = await import('../migrations/002_bookings_and_charges');
+  const { up: up003 } = await import('../migrations/003_payments_and_ledger');
   await up001(client.db('visa_portal_smoke'));
   await up002(client.db('visa_portal_smoke'));
+  await up003(client.db('visa_portal_smoke'));
 
   console.log('Seeding an admin, an agency and an agency user…');
   const { adminActor } = await import('@/lib/dal/actor');
@@ -339,6 +341,58 @@ async function main(): Promise<void> {
     'undoing the import reverts the passport and voids the charge',
     undone.chargesVoided === 1 && afterUndo.status === 'added',
     `${afterUndo.status}, charges voided ${undone.chargesVoided}`,
+  );
+
+  // --- milestone 5: payments and balances -------------------------------------------
+  // Re-import so there is a live charge to pay against (the undo above voided the first).
+  await dal.commitImport(adminDalActor, {
+    buffer: Buffer.from(bookingCsv, 'utf8'),
+    filename: 'smoke-bookings-2.csv',
+  });
+
+  const paymentsPage = await fetch(`${BASE}/admin/payments`, { headers: cookie(adminSession.token) });
+  const paymentsHtml = await paymentsPage.text();
+  check(
+    'the daily payments form renders with the agency and its default currency',
+    paymentsPage.status === 200 && paymentsHtml.includes('Record a payment') && paymentsHtml.includes('Smoke Agency'),
+  );
+
+  const key = dal.newIdempotencyKey();
+  await dal.recordPayment(adminDalActor, {
+    agencyId: agency.id,
+    amountMinor: 5_000,
+    currency: 'USD',
+    idempotencyKey: key,
+  });
+  const duplicate = await dal.recordPayment(adminDalActor, {
+    agencyId: agency.id,
+    amountMinor: 5_000,
+    currency: 'USD',
+    idempotencyKey: key,
+  });
+  check('the same payment submitted twice is recorded once', duplicate.duplicate === true);
+
+  const balancesPage = await fetch(`${BASE}/admin/balances`, { headers: cookie(adminSession.token) });
+  const balancesHtml = await balancesPage.text();
+  check(
+    'the balance overview shows charged, paid and outstanding',
+    balancesPage.status === 200 &&
+      balancesHtml.includes('120.00 USD') &&
+      balancesHtml.includes('50.00 USD') &&
+      balancesHtml.includes('70.00 USD'),
+  );
+  check(
+    'the EGP figure is shown and labelled indicative',
+    balancesHtml.includes('indicative') && balancesHtml.includes('rate last updated'),
+  );
+
+  const agencyLedger = await fetch(`${BASE}/balance`, { headers: cookie(agencySession.token) });
+  const agencyLedgerHtml = await agencyLedger.text();
+  check(
+    'the agency sees its own balance and payment history, read-only',
+    agencyLedger.status === 200 &&
+      agencyLedgerHtml.includes('70.00 USD') &&
+      !agencyLedgerHtml.includes('Record a payment'),
   );
 
   const settings = await fetch(`${BASE}/admin/settings/export`, { headers: cookie(adminSession.token) });

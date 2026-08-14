@@ -27,8 +27,10 @@ export default async function AppLayout({ children }: LayoutProps<'/'>) {
         { href: '/admin/passports', label: 'Passports' },
         { href: '/admin/agencies', label: 'Agencies' },
         { href: '/admin/users', label: 'Users' },
+        { href: '/admin/payments', label: 'Payments' },
+        { href: '/admin/balances', label: 'Balances' },
         { href: '/admin/routes', label: 'Routes' },
-        { href: '/admin/settings/export', label: 'Export format' },
+        { href: '/admin/settings', label: 'Settings' },
       ]
     : [
         { href: '/', label: 'Home' },

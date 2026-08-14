@@ -78,6 +78,26 @@ export {
 } from './handoff';
 
 export {
+  getAgencyBalance,
+  getBalanceOverview,
+  getBalances,
+  getLedger,
+  listPayments,
+  newIdempotencyKey,
+  recordCredit,
+  recordOpeningBalance,
+  recordPayment,
+  toDisplayEgp,
+  voidPayment,
+  type AgencyBalance,
+  type CurrencyBalance,
+  type LedgerLine,
+  type PaymentInput,
+  type PaymentView,
+  type RecordedPayment,
+} from './ledger';
+
+export {
   getDisplayRate,
   getExportTemplate,
   resetExportTemplate,

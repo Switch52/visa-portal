@@ -146,12 +146,26 @@ export interface BookingDoc {
   source?: { file: string; sheet: string; rowNumber: number; raw: Record<string, string> } | null;
 }
 
+/**
+ * What a ledger line is.
+ *
+ *  - `charge`          — one booked passport, priced from its route.
+ *  - `opening_balance` — what an agency owed on the cutover date, carried across from the
+ *    old payments sheet as a single dated line rather than reconstructed history.
+ *  - `credit`          — a reduction the admin grants, with a reason.
+ */
+export type LedgerEntryType = 'charge' | 'opening_balance' | 'credit';
+
 export interface ChargeDoc {
   _id: ObjectId;
+  type: LedgerEntryType;
   agencyId: ObjectId;
-  passportId: ObjectId;
-  bookingId: ObjectId;
-  routeId: ObjectId;
+  /** Null for an opening balance or a credit: they belong to no single passport. */
+  passportId: ObjectId | null;
+  bookingId: ObjectId | null;
+  routeId: ObjectId | null;
+  /** Shown on the ledger line — the "why" behind a number that has no passport. */
+  description?: string | null;
   /**
    * Copied from the route at the moment of booking, never read back through the route.
    * Editing a route's price later must not rewrite what an agency already owes.
@@ -165,6 +179,33 @@ export interface ChargeDoc {
   voidedAt?: Date | null;
   voidedBy?: ObjectId | null;
   voidReason?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface PaymentDoc {
+  _id: ObjectId;
+  agencyId: ObjectId;
+  /** Integer minor units. A payment is never a bare number. */
+  amountMinor: number;
+  currency: string;
+  /** Date-only, at midnight UTC: the day the money was received. */
+  receivedAt: Date;
+  method?: string | null;
+  reference?: string | null;
+  note?: string | null;
+  recordedBy: ObjectId | null;
+  /**
+   * Supplied by the form, unique per submission. A double-click cannot record the same
+   * payment twice — the unique index refuses the second write.
+   */
+  idempotencyKey: string;
+  /** Reversal keeps the row and marks it, so the ledger reads as history. */
+  voidedAt?: Date | null;
+  voidedBy?: ObjectId | null;
+  voidReason?: string | null;
+  /** Set only when a payment is recorded against one specific charge. */
+  appliesToChargeId?: ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
 }

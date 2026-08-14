@@ -23,7 +23,7 @@ console instead of being emailed, so a local run needs no third-party service.
 | Script | What it does |
 |---|---|
 | `npm run dev` / `build` / `start` | The Next.js app |
-| `npm test` | Isolation, auth, database, paste, batch, export, handoff and import tests (170) |
+| `npm test` | Isolation, auth, database, paste, batch, export, handoff, import and ledger tests (197) |
 | `npm run smoke` | Boots the built app against a throwaway database and checks the real HTTP surface |
 | `npm run typecheck` / `lint` | TypeScript, ESLint |
 | `npm run migrate` | Apply migrations (`-- --status`, `-- --down <id>`) |
@@ -105,7 +105,7 @@ normalized form is stored alongside the original.
 | 2 | Passports: grid entry, paste, duplicate rule, status flow | ✅ |
 | 3 | Routes & the handoff queue, CSV export | ✅ |
 | 4 | Bulk booking import | ✅ parser needs real files to validate against |
-| 5 | Payments & ledgers | — |
+| 5 | Payments & ledgers | ✅ |
 | 6 | Dashboards, audit log, view-as, notifications | — |
 | 7 | Migration + deploy | — |
 

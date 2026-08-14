@@ -133,6 +133,17 @@ export async function saveExportTemplateAction(_prev: FormState, formData: FormD
   return state;
 }
 
+/** The hand-maintained display rate. Changing it changes only what is shown. */
+export async function saveDisplayRateAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const state = await run(async (actor) => {
+    const { saveDisplayRate } = await import('@/lib/dal/settings');
+    await saveDisplayRate(actor, Number(String(formData.get('rate') ?? '')));
+  });
+  revalidatePath('/admin/settings/rate');
+  revalidatePath('/admin/balances');
+  return state;
+}
+
 export async function resetExportTemplateAction(): Promise<void> {
   await run(async (actor) => {
     const { resetExportTemplate } = await import('@/lib/dal/settings');
