@@ -49,6 +49,32 @@ export function parseDayFirstDate(value: string): Date {
   return dateOnly(Number(year), Number(month), Number(day));
 }
 
+/**
+ * Parse a date as a person types it into the grid, and return it in ISO form.
+ *
+ * Two shapes are accepted: `YYYY-MM-DD`, and day-first `DD/MM/YYYY` with any of `/ \ - .`
+ * as the separator, because both `27/8` and `15\9` appear in the real sheets. Day-first is
+ * applied strictly and never inferred from the values — `05/06/2028` is 5 June, always.
+ * Anything else returns null so the cell can show an error instead of a guess.
+ */
+export function parseTypedDate(input: string): Date | null {
+  const value = input.trim();
+  if (value === '') return null;
+
+  if (DATE_ONLY.test(value)) {
+    try {
+      return parseDateOnly(value);
+    } catch {
+      return null;
+    }
+  }
+  try {
+    return parseDayFirstDate(value);
+  } catch {
+    return null;
+  }
+}
+
 /** Format for the export file and the API. Never locale-formatted. */
 export function formatDateOnly(date: Date): string {
   return date.toISOString().slice(0, 10);

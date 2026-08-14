@@ -15,11 +15,13 @@ import { ObjectId, type Filter } from 'mongodb';
 
 import { normalizePassportNumber } from '@/config/validation';
 import { checkTransition, IMPORT_ONLY_STATUSES, type PassportStatus } from '@/config/statuses';
-import { agencies, passports } from '@/lib/db/collections';
+import { agencies, passports, users } from '@/lib/db/collections';
 import type { PassportDoc, StatusHistoryEntry } from '@/lib/db/types';
+import { formatDateOnly, todayDateOnly } from '@/lib/dates';
 import { passportInputSchema, type PassportInput } from '@/lib/schema/zod';
 
 import {
+  assertAdmin,
   assertCanWrite,
   isAdmin,
   notDeleted,
@@ -30,7 +32,14 @@ import {
 } from './actor';
 import { isDuplicateKey } from './agencies';
 import { writeAudit } from './audit';
-import { DuplicatePassportError, ForbiddenError, NotFoundError, ValidationError } from './errors';
+import {
+  DalError,
+  DuplicatePassportError,
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+  type DuplicatePassportDetail,
+} from './errors';
 import { getRouteForPricing } from './routes';
 
 export interface PassportView {
@@ -89,12 +98,17 @@ export interface PassportFilters {
   status?: PassportStatus | PassportStatus[];
   routeId?: ObjectId;
   agencyId?: ObjectId;
+  nationality?: string;
+  submittedFrom?: Date;
+  submittedTo?: Date;
+  /** Matches a passport number, or a name once it is more than two characters. */
   search?: string;
   limit?: number;
   skip?: number;
 }
 
-export async function listPassports(actor: Actor, filters: PassportFilters = {}): Promise<PassportView[]> {
+/** One filter builder for lists and counts, so a screen's count always matches its rows. */
+function buildFilter(filters: PassportFilters): Filter<PassportDoc> {
   const filter: Filter<PassportDoc> = {};
 
   if (filters.status) {
@@ -102,16 +116,41 @@ export async function listPassports(actor: Actor, filters: PassportFilters = {})
   }
   if (filters.routeId) filter.routeId = filters.routeId;
   if (filters.agencyId) filter.agencyId = filters.agencyId;
-  if (filters.search) {
-    // Search by passport number only, and by its normalized form, so a typed space or
-    // dash still finds the record.
-    filter.passportNumberNormalized = { $regex: `^${escapeRegex(normalizePassportNumber(filters.search))}` };
+  if (filters.nationality) filter.nationality = filters.nationality.toUpperCase();
+
+  if (filters.submittedFrom || filters.submittedTo) {
+    filter.submittedAt = {
+      ...(filters.submittedFrom ? { $gte: filters.submittedFrom } : {}),
+      ...(filters.submittedTo ? { $lte: filters.submittedTo } : {}),
+    };
   }
 
+  const search = filters.search?.trim();
+  if (search) {
+    // A passport number is matched on its normalized form, so a typed space or dash still
+    // finds the record. Names are matched as a prefix, case-insensitively.
+    const normalized = escapeRegex(normalizePassportNumber(search));
+    const name = escapeRegex(search);
+    filter.$or = [
+      { passportNumberNormalized: { $regex: `^${normalized}` } },
+      ...(search.length > 2
+        ? [
+            { firstName: { $regex: `^${name}`, $options: 'i' } },
+            { lastName: { $regex: `^${name}`, $options: 'i' } },
+          ]
+        : []),
+    ];
+  }
+
+  return filter;
+}
+
+export async function listPassports(actor: Actor, filters: PassportFilters = {}): Promise<PassportView[]> {
   const collection = await passports();
   const docs = await collection
-    .find(notDeleted(scopedFilter(actor, filter)))
-    .sort({ submittedAt: -1 })
+    .find(notDeleted(scopedFilter(actor, buildFilter(filters))))
+    // Urgent first, then oldest first: the queue reads top-down in the order to work it.
+    .sort({ priority: -1, submittedAt: -1 })
     .skip(filters.skip ?? 0)
     .limit(Math.min(filters.limit ?? 100, 500))
     .toArray();
@@ -120,13 +159,24 @@ export async function listPassports(actor: Actor, filters: PassportFilters = {})
 }
 
 export async function countPassports(actor: Actor, filters: PassportFilters = {}): Promise<number> {
-  const filter: Filter<PassportDoc> = {};
-  if (filters.status) {
-    filter.status = Array.isArray(filters.status) ? { $in: filters.status } : filters.status;
-  }
-  if (filters.agencyId) filter.agencyId = filters.agencyId;
   const collection = await passports();
-  return collection.countDocuments(notDeleted(scopedFilter(actor, filter)));
+  return collection.countDocuments(notDeleted(scopedFilter(actor, buildFilter(filters))));
+}
+
+/** Counts per status for the current scope, for the dashboards and the list filters. */
+export async function countByStatus(
+  actor: Actor,
+  filters: PassportFilters = {},
+): Promise<Record<string, number>> {
+  const collection = await passports();
+  const rows = await collection
+    .aggregate<{ _id: PassportStatus; count: number }>([
+      { $match: notDeleted(scopedFilter(actor, buildFilter(filters))) },
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+    ])
+    .toArray();
+
+  return Object.fromEntries(rows.map((row) => [row._id, row.count]));
 }
 
 /** Another agency's passport is indistinguishable from one that does not exist. */
@@ -217,6 +267,154 @@ export async function createPassport(
     }
     throw error;
   }
+}
+
+export interface BatchRowResult {
+  /** Index of the row as it sat in the grid, so an error lands on the right line. */
+  index: number;
+  status: 'saved' | 'blocked';
+  passportId?: string;
+  /** Present when blocked. Written for the person who will read it, not for a log. */
+  reason?: string;
+  fieldErrors?: Record<string, string[]>;
+  duplicate?: DuplicatePassportDetail;
+}
+
+export interface BatchResult {
+  saved: number;
+  blocked: number;
+  rows: BatchRowResult[];
+}
+
+/**
+ * Save a batch of rows.
+ *
+ * The whole batch is validated, offending rows are rejected individually, and the clean
+ * rows go through — one bad row does not cost someone the other twenty-nine they typed.
+ * Each row is its own insert, so a duplicate blocks itself and nothing else.
+ *
+ * Duplicates *within* the batch are caught here as well: the second row carrying a number
+ * that an earlier row in the same paste already used is blocked with the same reason, which
+ * a per-row unique index alone would report as a database error nobody could read.
+ */
+export async function createPassports(
+  actor: Actor,
+  inputs: readonly PassportInput[],
+  options: CreatePassportOptions = {},
+): Promise<BatchResult> {
+  assertCanWrite(actor);
+
+  const rows: BatchRowResult[] = [];
+  const seenInBatch = new Map<string, number>();
+
+  for (const [index, input] of inputs.entries()) {
+    const normalized = normalizePassportNumber(String(input.passportNumber ?? ''));
+    const earlierRow = seenInBatch.get(normalized);
+
+    if (earlierRow !== undefined) {
+      rows.push({
+        index,
+        status: 'blocked',
+        reason: `This passport number is already on row ${earlierRow + 1} of this batch.`,
+      });
+      continue;
+    }
+
+    try {
+      const created = await createPassport(actor, input, options);
+      seenInBatch.set(normalized, index);
+      rows.push({ index, status: 'saved', passportId: created.id });
+    } catch (error) {
+      if (error instanceof DuplicatePassportError) {
+        rows.push({
+          index,
+          status: 'blocked',
+          reason: describeDuplicate(error.detail),
+          duplicate: error.detail,
+        });
+        continue;
+      }
+      if (error instanceof ValidationError) {
+        rows.push({ index, status: 'blocked', reason: error.message, fieldErrors: error.fieldErrors });
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  const saved = rows.filter((row) => row.status === 'saved').length;
+
+  await writeAudit(actor, {
+    action: 'passport.create',
+    entity: 'passport',
+    agencyId: options.agencyId ?? actor.agencyId ?? null,
+    metadata: { submitted: inputs.length, saved, blocked: inputs.length - saved },
+  });
+
+  return { saved, blocked: rows.length - saved, rows };
+}
+
+/** The message an agency reads: when it was registered and what state it is in. Never who. */
+export function describeDuplicate(detail: DuplicatePassportDetail): string {
+  const when = detail.submittedAt.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+  const who = detail.agencyName ? `, submitted by ${detail.agencyName}` : '';
+  return `This passport is already registered in the system (submitted ${when}${who}, status: ${detail.status}). Contact us if you believe this is an error.`;
+}
+
+/**
+ * Check a set of passport numbers before anything is typed further, so the grid can mark a
+ * duplicate as the person moves off the cell rather than at submit time.
+ *
+ * The answer is the same either way — already registered, or not — and for an agency it
+ * carries no clue about who registered it.
+ */
+export async function checkDuplicates(
+  actor: Actor,
+  numbers: readonly string[],
+): Promise<Record<string, DuplicatePassportDetail>> {
+  const normalized = [...new Set(numbers.map(normalizePassportNumber))].filter((value) => value !== '');
+  if (normalized.length === 0) return {};
+
+  const collection = await passports();
+  // Deliberately unscoped: the rule is system-wide, and an agency finding out that a
+  // number is taken is the point. What comes back is what they may know about it.
+  const docs = await collection
+    .find({ passportNumberNormalized: { $in: normalized } })
+    .project<{ passportNumberNormalized: string; submittedAt: Date; status: string; agencyId: ObjectId }>({
+      passportNumberNormalized: 1,
+      submittedAt: 1,
+      status: 1,
+      agencyId: 1,
+    })
+    .toArray();
+
+  const showOwner = isAdmin(actor) && actor.viewingAsAgencyId === null;
+  const agencyNames = new Map<string, string>();
+  if (showOwner && docs.length > 0) {
+    const agencyCollection = await agencies();
+    const owners = await agencyCollection
+      .find({ _id: { $in: docs.map((doc) => doc.agencyId) } })
+      .toArray();
+    for (const owner of owners) agencyNames.set(owner._id.toHexString(), owner.name);
+  }
+
+  return Object.fromEntries(
+    docs.map((doc) => [
+      doc.passportNumberNormalized,
+      {
+        submittedAt: doc.submittedAt,
+        status: doc.status,
+        ...(showOwner
+          ? { agencyName: agencyNames.get(doc.agencyId.toHexString()), agencyId: doc.agencyId.toHexString() }
+          : {}),
+      } satisfies DuplicatePassportDetail,
+    ]),
+  );
 }
 
 /**
@@ -329,14 +527,211 @@ export async function changePassportStatus(
   return toView(after, actor);
 }
 
-/** Agencies may edit their own passports only while they are not yet booked. */
-export async function assertEditable(actor: Actor, doc: PassportDoc): Promise<void> {
+/**
+ * Change several passports' statuses at once.
+ *
+ * Each one is decided on its own, so a row that cannot make the move reports why instead
+ * of failing the whole selection — the same rule the batch save follows.
+ */
+export async function changePassportStatuses(
+  actor: Actor,
+  ids: readonly ObjectId[],
+  to: PassportStatus,
+  options: StatusChangeOptions = {},
+): Promise<{ changed: number; failures: { id: string; reason: string }[] }> {
+  assertCanWrite(actor);
+
+  // Asking to bulk-mark anything as booked is refused before a single row is touched.
+  // It is not a per-row outcome to report — the whole request is one the system does not
+  // accept, whatever the rows happen to be.
+  if ((options.via ?? 'manual') === 'manual' && IMPORT_ONLY_STATUSES.includes(to)) {
+    throw new ForbiddenError('Only importing a booking file can mark a passport as booked.');
+  }
+
+  let changed = 0;
+  const failures: { id: string; reason: string }[] = [];
+
+  for (const id of ids) {
+    try {
+      await changePassportStatus(actor, id, to, options);
+      changed += 1;
+    } catch (error) {
+      if (error instanceof DalError) {
+        failures.push({ id: id.toHexString(), reason: error.message });
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  return { changed, failures };
+}
+
+/**
+ * Agencies may edit their own passports only while they are not yet booked. After booking
+ * it is locked and they have to contact the admin — the details are in the other system by
+ * then, and changing them here would only make the two disagree.
+ */
+export function assertEditable(actor: Actor, doc: PassportDoc): void {
   assertCanWrite(actor);
   const scope = scopeAgencyId(actor);
   if (scope && !doc.agencyId.equals(scope)) throw new NotFoundError();
   if (scope && (doc.status === 'booked' || doc.status === 'completed')) {
-    throw new ForbiddenError('This passport is booked and can no longer be edited. Contact us if something is wrong.');
+    throw new ForbiddenError(
+      'This passport is booked and can no longer be edited. Contact us if something is wrong.',
+    );
   }
+}
+
+/** Fields an edit may touch. The passport number is not among them — see below. */
+export type PassportEdit = Partial<
+  Pick<
+    PassportInput,
+    | 'firstName'
+    | 'lastName'
+    | 'passportExpiryDate'
+    | 'dateOfBirth'
+    | 'nationality'
+    | 'gender'
+    | 'contactNumber'
+    | 'contactNumberDialCode'
+    | 'contactEmail'
+    | 'notes'
+    | 'holdUntil'
+    | 'priority'
+    | 'applicationType'
+  >
+>;
+
+/**
+ * Edit a passport's details.
+ *
+ * The passport number itself cannot be changed here. Editing it would move the record from
+ * under the unique index that has already accepted it — the honest operations are to
+ * cancel the record and submit the right one, so the duplicate history stays readable.
+ */
+export async function updatePassport(actor: Actor, id: ObjectId, edit: PassportEdit): Promise<PassportView> {
+  const collection = await passports();
+  const doc = await collection.findOne(notDeleted(scopedFilter(actor, { _id: id })));
+  if (!doc) throw new NotFoundError();
+
+  assertEditable(actor, doc);
+
+  // Validate the edit against the full record, so a change cannot make the whole thing
+  // invalid — an expiry moved into the past, for instance.
+  const merged = {
+    firstName: edit.firstName ?? doc.firstName,
+    lastName: edit.lastName ?? doc.lastName,
+    passportNumber: doc.passportNumber,
+    passportExpiryDate: edit.passportExpiryDate ?? formatDateOnly(doc.passportExpiryDate),
+    dateOfBirth: edit.dateOfBirth ?? formatDateOnly(doc.dateOfBirth),
+    nationality: edit.nationality ?? doc.nationality,
+    gender: edit.gender ?? doc.gender,
+    contactNumber: edit.contactNumber ?? doc.contactNumber,
+    contactNumberDialCode: edit.contactNumberDialCode ?? doc.contactNumberDialCode,
+    contactEmail: edit.contactEmail ?? doc.contactEmail,
+    notes: edit.notes ?? doc.notes,
+    holdUntil: edit.holdUntil ?? (doc.holdUntil ? formatDateOnly(doc.holdUntil) : null),
+    priority: edit.priority ?? doc.priority,
+    applicationType: edit.applicationType ?? doc.applicationType,
+    routeId: doc.routeId.toHexString(),
+  };
+
+  const parsed = passportInputSchema.safeParse(merged);
+  if (!parsed.success) {
+    throw new ValidationError('Check these details', parsed.error.flatten().fieldErrors as Record<string, string[]>);
+  }
+
+  const update: Partial<PassportDoc> = {
+    firstName: parsed.data.firstName,
+    lastName: parsed.data.lastName,
+    passportExpiryDate: parsed.data.passportExpiryDate,
+    dateOfBirth: parsed.data.dateOfBirth,
+    nationality: parsed.data.nationality,
+    gender: parsed.data.gender,
+    contactNumber: parsed.data.contactNumber || null,
+    contactNumberDialCode: parsed.data.contactNumberDialCode || null,
+    contactEmail: parsed.data.contactEmail || null,
+    notes: parsed.data.notes || null,
+    holdUntil: parsed.data.holdUntil ?? null,
+    priority: parsed.data.priority,
+    applicationType: parsed.data.applicationType,
+    updatedAt: new Date(),
+  };
+
+  const after = await collection.findOneAndUpdate({ _id: id }, { $set: update }, { returnDocument: 'after' });
+  if (!after) throw new NotFoundError();
+
+  await writeAudit(actor, {
+    action: 'passport.update',
+    entity: 'passport',
+    entityId: id,
+    agencyId: doc.agencyId,
+    before: { status: doc.status, priority: doc.priority, holdUntil: doc.holdUntil },
+    after: { status: after.status, priority: after.priority, holdUntil: after.holdUntil },
+    metadata: { fields: Object.keys(edit) },
+  });
+
+  return toView(after, actor);
+}
+
+export interface StatusHistoryView {
+  status: PassportStatus;
+  at: Date;
+  actorRole: string;
+  via: string;
+  note: string | null;
+  actorName?: string;
+}
+
+/** A passport carries its full history, not just a current value. */
+export async function getPassportHistory(actor: Actor, id: ObjectId): Promise<StatusHistoryView[]> {
+  const collection = await passports();
+  const doc = await collection.findOne(notDeleted(scopedFilter(actor, { _id: id })));
+  if (!doc) throw new NotFoundError();
+
+  const actorIds = doc.statusHistory.map((entry) => entry.actorId).filter((value): value is ObjectId => value !== null);
+  const names = new Map<string, string>();
+
+  if (actorIds.length > 0 && isAdmin(actor)) {
+    const userCollection = await users();
+    const docs = await userCollection.find({ _id: { $in: actorIds } }).toArray();
+    for (const user of docs) names.set(user._id.toHexString(), user.name);
+  }
+
+  return doc.statusHistory.map((entry) => ({
+    status: entry.status,
+    at: entry.at,
+    actorRole: entry.actorRole,
+    via: entry.via,
+    note: entry.note ?? null,
+    // Agencies see that it happened and when, not which of our people did it.
+    actorName: entry.actorId ? names.get(entry.actorId.toHexString()) : undefined,
+  }));
+}
+
+/**
+ * Holds that have come due.
+ *
+ * `holdUntil` exists so nobody has to remember: once the date passes, the passport comes
+ * back into the intake queue on its own rather than sitting on hold indefinitely.
+ */
+export async function releaseDueHolds(actor: Actor, now = new Date()): Promise<number> {
+  assertAdmin(actor);
+  const collection = await passports();
+  const due = await collection
+    .find(notDeleted({ status: 'on_hold', holdUntil: { $ne: null, $lte: todayDateOnly(now) } }))
+    .toArray();
+
+  let released = 0;
+  for (const doc of due) {
+    await changePassportStatus(actor, doc._id, 'submitted', {
+      via: 'system',
+      note: 'Hold date passed',
+    });
+    released += 1;
+  }
+  return released;
 }
 
 function escapeRegex(value: string): string {

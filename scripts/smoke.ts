@@ -165,6 +165,69 @@ async function main(): Promise<void> {
     agencyPassports.status === 200 && !agencyPassportsHtml.includes('120.00') && !agencyPassportsHtml.includes('Everything, across'),
   );
 
+  // --- milestone 2: entry, listing and the detail view ------------------------------
+  const gridPage = await fetch(`${BASE}/passports/new`, { headers: cookie(agencySession.token) });
+  const gridHtml = await gridPage.text();
+  check(
+    'the grid entry screen renders with the route picker and no fee',
+    gridPage.status === 200 &&
+      gridHtml.includes('Egypt → France · VFS Cairo') &&
+      gridHtml.includes('Paste straight from your spreadsheet') &&
+      !gridHtml.includes('120.00'),
+  );
+
+  // Seed a passport through the DAL so the list and detail views have something real.
+  const { ObjectId: Oid } = await import('mongodb');
+  const { agencyActor } = await import('@/lib/dal/actor');
+  const agencyDalActor = agencyActor(new Oid(agencyUser.id), new Oid(agency.id));
+  const created = await dal.createPassports(agencyDalActor, [
+    {
+      firstName: 'Smoke',
+      lastName: 'Traveller',
+      passportNumber: 'A99887766',
+      passportExpiryDate: '2032-09-15',
+      dateOfBirth: '1995-07-11',
+      nationality: 'EGY',
+      gender: 'Female',
+      routeId: (await dal.listRouteOptions(admin))[0]!.id,
+      notes: 'مهم جدا يتحجز',
+    },
+  ]);
+  const passportId = created.rows[0]!.passportId!;
+
+  const listWithRow = await fetch(`${BASE}/passports`, { headers: cookie(agencySession.token) });
+  const listHtml = await listWithRow.text();
+  check(
+    'the agency sees their own passport in the list, notes and all',
+    listHtml.includes('A99887766') && listHtml.includes('مهم جدا يتحجز'),
+  );
+
+  const search = await fetch(`${BASE}/admin/passports?q=a99887766`, { headers: cookie(adminSession.token) });
+  const searchHtml = await search.text();
+  check('an admin can find it by passport number, lower-cased', searchHtml.includes('A99887766'));
+
+  const filteredOut = await fetch(`${BASE}/admin/passports?status=booked`, {
+    headers: cookie(adminSession.token),
+  });
+  const filteredHtml = await filteredOut.text();
+  check('a status filter that matches nothing shows nothing', !filteredHtml.includes('A99887766'));
+
+  const detail = await fetch(`${BASE}/passports/${passportId}`, { headers: cookie(agencySession.token) });
+  const detailHtml = await detail.text();
+  check(
+    'the detail view shows the record and its history',
+    detail.status === 200 && detailHtml.includes('Smoke') && detailHtml.includes('History'),
+  );
+
+  const otherAgencysRecord = await fetch(`${BASE}/passports/${new Oid().toHexString()}`, {
+    headers: cookie(agencySession.token),
+  });
+  check(
+    'a passport id that is not theirs is a plain not-found',
+    otherAgencysRecord.status === 404,
+    `status ${otherAgencysRecord.status}`,
+  );
+
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed.`);
   if (failed.length > 0) process.exitCode = 1;

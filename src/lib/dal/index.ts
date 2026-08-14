@@ -53,10 +53,22 @@ export {
 
 export {
   changePassportStatus,
+  changePassportStatuses,
+  checkDuplicates,
+  countByStatus,
   countPassports,
   createPassport,
+  createPassports,
+  describeDuplicate,
   getPassport,
+  getPassportHistory,
   listPassports,
+  releaseDueHolds,
+  updatePassport,
+  type BatchResult,
+  type BatchRowResult,
+  type PassportEdit,
   type PassportFilters,
   type PassportView,
+  type StatusHistoryView,
 } from './passports';
