@@ -1,0 +1,3 @@
+firstName,lastName,passportNumber,passportExpiryDate,dateOfBirth,nationality,gender,contactNumber (optional),contactNumberDialCode (optional),contactEmail (optional)
+John,Doe,A1234567,2030-12-31,1990-05-15,USA,Male,1234567890,1,john.doe@example.com
+Jane,Smith,B7654321,2029-08-20,1985-03-22,GBR,Female,9876543210,44,jane.smith@example.com
