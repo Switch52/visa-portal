@@ -12,7 +12,8 @@
     "migrate": "tsx migrations/run.ts",
     "create-admin": "tsx scripts/create-admin.ts",
     "profile": "node scripts/profile-sheets.mjs",
-    "smoke": "tsx scripts/smoke.ts"
+    "smoke": "tsx scripts/smoke.ts",
+    "seed-route": "tsx scripts/seed-route.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
