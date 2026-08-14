@@ -66,7 +66,9 @@ export {
   getRoute,
   listRouteOptions,
   listRoutes,
+  repriceRoutes,
   updateRoute,
+  type RepriceResult,
   type RouteDetail,
   type RouteOption,
 } from './routes';

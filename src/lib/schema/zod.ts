@@ -169,6 +169,8 @@ export const passportInputSchema = z
     contactEmail: z.union([emailSchema, z.literal('')]).optional().nullable(),
     routeId: objectIdString,
     applicationType: applicationTypeSchema.default('single'),
+    /** Set by the grid when rows are marked as one family. */
+    groupRef: z.string().trim().max(64).optional().nullable(),
     priority: prioritySchema.default('normal'),
     holdUntil: dateOnlySchema.optional().nullable(),
     notes: z.string().trim().max(5000).optional().nullable(),

@@ -134,6 +134,70 @@ export async function createRoute(actor: Actor, input: RouteInput): Promise<Rout
   }
 }
 
+export interface RepriceResult {
+  updated: { id: string; label: string; fromMinor: number; toMinor: number }[];
+  unchanged: { id: string; label: string; reason: string }[];
+}
+
+/**
+ * Put a new price on the routes you choose, and only those.
+ *
+ * Prices are per route by design — Cairo and Alexandria are separate routes and can move
+ * separately, or together, or one at a time. Like any fee change this applies to future
+ * charges only: every charge already raised keeps the amount it was created with.
+ *
+ * A route already at the new price is reported as unchanged rather than rewritten, so the
+ * audit log does not fill with edits that changed nothing.
+ */
+export async function repriceRoutes(
+  actor: Actor,
+  routeIds: readonly ObjectId[],
+  fee: { amountMinor: number; currency: string },
+): Promise<RepriceResult> {
+  assertAdmin(actor);
+  if (routeIds.length === 0) throw new ValidationError('Choose which routes this price applies to');
+
+  const collection = await routes();
+  const docs = await collection.find(notDeleted({ _id: { $in: [...routeIds] } })).toArray();
+  if (docs.length === 0) throw new NotFoundError();
+
+  const currency = fee.currency.toUpperCase();
+  const result: RepriceResult = { updated: [], unchanged: [] };
+
+  for (const doc of docs) {
+    if (doc.feeMinor === fee.amountMinor && doc.feeCurrency === currency) {
+      result.unchanged.push({
+        id: doc._id.toHexString(),
+        label: doc.displayLabel,
+        reason: 'Already at that price',
+      });
+      continue;
+    }
+
+    await updateRoute(actor, doc._id, { feeMinor: fee.amountMinor, feeCurrency: currency });
+    result.updated.push({
+      id: doc._id.toHexString(),
+      label: doc.displayLabel,
+      fromMinor: doc.feeMinor,
+      toMinor: fee.amountMinor,
+    });
+  }
+
+  await writeAudit(actor, {
+    action: 'route.update',
+    entity: 'route',
+    metadata: {
+      repriced: result.updated.length,
+      unchanged: result.unchanged.length,
+      toMinor: fee.amountMinor,
+      currency,
+      appliesTo: 'future charges only',
+    },
+  });
+
+  return result;
+}
+
 /**
  * Editing a fee affects future charges only. Charges store the amount they were created
  * with, so nothing already on a ledger moves when this runs.

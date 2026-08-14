@@ -10,6 +10,7 @@
  */
 
 import { resolveCountryName } from '@/config/countries';
+import { APPLICATION_TYPES, type ApplicationType } from '@/config/validation';
 import { GRID_COLUMNS, GRID_FIELDS, IGNORED_PASTE_COLUMNS, type GridField } from './columns';
 
 export type GridRow = Record<GridField, string>;
@@ -216,6 +217,15 @@ export function normalizeCell(field: GridField, raw: string): string {
   if (value === '') return '';
 
   switch (field) {
+    case 'applicationType': {
+      // People write this several ways; anything unrecognised is left alone so the cell
+      // shows an error rather than silently becoming "single".
+      const lower = value.toLowerCase().replace(/\s+/g, ' ');
+      if (['single', '1', 'singel', 'sengel', 'sngel'].includes(lower)) return 'single';
+      if (['family of 2', 'family 2', 'family_2', '2', 'couple', 'double'].includes(lower)) return 'family_2';
+      if (['family of 4', 'family 4', 'family_4', '4'].includes(lower)) return 'family_4';
+      return (APPLICATION_TYPES as readonly string[]).includes(lower) ? (lower as ApplicationType) : value;
+    }
     case 'gender': {
       const lower = value.toLowerCase();
       if (['m', 'male', 'ذكر'].includes(lower)) return 'Male';

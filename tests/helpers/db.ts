@@ -37,9 +37,11 @@ export async function startTestDb(): Promise<TestContext> {
   const { up: up001 } = await import('../../migrations/001_initial_collections');
   const { up: up002 } = await import('../../migrations/002_bookings_and_charges');
   const { up: up003 } = await import('../../migrations/003_payments_and_ledger');
+  const { up: up004 } = await import('../../migrations/004_family_applications');
   await up001(client.db('visa_portal_test'));
   await up002(client.db('visa_portal_test'));
   await up003(client.db('visa_portal_test'));
+  await up004(client.db('visa_portal_test'));
 
   return {
     client,

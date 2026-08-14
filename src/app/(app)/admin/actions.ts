@@ -111,6 +111,29 @@ export async function updateRouteAction(_prev: FormState, formData: FormData): P
   return state;
 }
 
+/**
+ * Put a new price on the routes chosen on screen. Prices are per route, so a rise can
+ * cover one centre, several, or all of them — and it applies to future charges only.
+ */
+export async function repriceRoutesAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const state = await run(async (actor) => {
+    const { repriceRoutes } = await import('@/lib/dal/routes');
+    const { parseMoneyInput } = await import('@/lib/money');
+
+    const currency = String(formData.get('feeCurrency') ?? 'USD');
+    const fee = parseMoneyInput(String(formData.get('fee') ?? '0'), currency);
+    const ids = formData.getAll('routeId').map(String).filter((id) => ObjectId.isValid(id));
+
+    await repriceRoutes(
+      actor,
+      ids.map((id) => new ObjectId(id)),
+      { amountMinor: fee.amountMinor, currency: fee.currency },
+    );
+  });
+  revalidatePath('/admin/routes');
+  return state;
+}
+
 export async function saveExportTemplateAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const state = await run(async (actor) => {
     const { saveExportTemplate } = await import('@/lib/dal/settings');

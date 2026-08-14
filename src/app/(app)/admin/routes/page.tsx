@@ -14,6 +14,7 @@ import { formatMoney } from '@/lib/money';
 
 import { EditRouteRow } from './edit-route-row';
 import { NewRouteForm } from './new-route-form';
+import { RepriceForm } from './reprice-form';
 
 /**
  * Routes carry the pricing, so this whole screen is admin-only — and so is the DAL behind
@@ -35,6 +36,8 @@ export default async function RoutesPage() {
       </div>
 
       <NewRouteForm />
+
+      <RepriceForm routes={routes} />
 
       <Card>
         <CardHeader>

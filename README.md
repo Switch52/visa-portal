@@ -23,11 +23,12 @@ console instead of being emailed, so a local run needs no third-party service.
 | Script | What it does |
 |---|---|
 | `npm run dev` / `build` / `start` | The Next.js app |
-| `npm test` | Every invariant, across nine suites (220) |
+| `npm test` | Every invariant, across eleven suites (241) |
 | `npm run smoke` | Boots the built app against a throwaway database and checks the real HTTP surface |
 | `npm run typecheck` / `lint` | TypeScript, ESLint |
 | `npm run migrate` | Apply migrations (`-- --status`, `-- --down <id>`) |
 | `npm run create-admin` | Bootstrap the first administrator |
+| `npm run seed-route` | Create a route from the command line (idempotent) |
 | `npm run profile` | Re-run the migration data profiler over `private/` |
 
 ## How it is put together

@@ -138,6 +138,8 @@ export const passportSchema: JsonSchema = {
     submittedAt: date,
     submittedBy: nullableObjectId,
     applicationType: { enum: [...APPLICATION_TYPES] },
+    // Shared by the members of one family application; absent for a single applicant.
+    groupRef: nullableString,
     priority: { enum: [...PRIORITIES] },
     holdUntil: nullableDate,
     notes: nullableString,

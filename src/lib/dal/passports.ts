@@ -57,6 +57,7 @@ export interface PassportView {
   routeId: string;
   status: PassportStatus;
   applicationType: string;
+  groupRef: string | null;
   priority: string;
   holdUntil: Date | null;
   notes: string | null;
@@ -82,6 +83,7 @@ function toView(doc: PassportDoc, actor: Actor): PassportView {
     routeId: doc.routeId.toHexString(),
     status: doc.status,
     applicationType: doc.applicationType,
+    groupRef: doc.groupRef ?? null,
     priority: doc.priority,
     holdUntil: doc.holdUntil ?? null,
     notes: doc.notes ?? null,
@@ -243,6 +245,7 @@ export async function createPassport(
     submittedAt: now,
     submittedBy: actor.userId,
     applicationType: parsed.data.applicationType,
+    groupRef: parsed.data.groupRef || null,
     priority: parsed.data.priority,
     holdUntil: parsed.data.holdUntil ?? null,
     notes: parsed.data.notes || null,

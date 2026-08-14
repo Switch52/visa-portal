@@ -179,6 +179,7 @@ describe('row validation', () => {
   const routeId = '507f1f77bcf86cd799439011';
 
   const row = (overrides: Partial<Record<(typeof GRID_FIELDS)[number], string>> = {}) => ({
+    applicationType: 'single',
     firstName: 'SALMA',
     lastName: 'SOLIMAN',
     passportNumber: 'A42865745',

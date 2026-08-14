@@ -40,8 +40,36 @@ export const DATE_LIMITS = {
   expiryMustBeFuture: true,
 } as const;
 
-export const APPLICATION_TYPES = ['single'] as const;
+/**
+ * How an application is submitted.
+ *
+ * `single` is one person on their own. A family goes in as one application covering
+ * several people, and each member is still a passport in their own right — they are linked
+ * by a shared group reference so they stay together through the queue, the handoff export
+ * and the booking file, rather than being scattered by whatever the sort order happens to
+ * be that day.
+ *
+ * Adding another size later is one entry here plus a migration for the validator.
+ */
+export const APPLICATION_TYPES = ['single', 'family_2', 'family_4'] as const;
 export type ApplicationType = (typeof APPLICATION_TYPES)[number];
+
+export const APPLICATION_TYPE_LABELS: Record<ApplicationType, string> = {
+  single: 'Single',
+  family_2: 'Family of 2',
+  family_4: 'Family of 4',
+};
+
+/** How many people one application of this type covers. */
+export const APPLICATION_TYPE_SIZE: Record<ApplicationType, number> = {
+  single: 1,
+  family_2: 2,
+  family_4: 4,
+};
+
+export function isFamilyType(type: ApplicationType): boolean {
+  return APPLICATION_TYPE_SIZE[type] > 1;
+}
 
 export const PRIORITIES = ['normal', 'urgent'] as const;
 export type Priority = (typeof PRIORITIES)[number];

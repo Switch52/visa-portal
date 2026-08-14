@@ -7,6 +7,7 @@
  */
 
 export type GridField =
+  | 'applicationType'
   | 'firstName'
   | 'lastName'
   | 'passportNumber'
@@ -32,6 +33,15 @@ export interface GridColumn {
 }
 
 export const GRID_COLUMNS: readonly GridColumn[] = [
+  {
+    // First, because it decides whether the rows below belong together as one family.
+    field: 'applicationType',
+    label: 'Application',
+    width: 'w-28',
+    hint: 'Single or family',
+    required: false,
+    aliases: ['application', 'application type', 'type', 'applicationtype'],
+  },
   {
     field: 'firstName',
     label: 'First name',

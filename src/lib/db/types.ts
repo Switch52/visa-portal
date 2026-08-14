@@ -107,6 +107,11 @@ export interface PassportDoc extends Timestamps {
   submittedAt: Date;
   submittedBy: ObjectId | null;
   applicationType: ApplicationType;
+  /**
+   * Shared by the members of one family application, so they travel together through the
+   * queue, the export and the booking file. Null for a single applicant.
+   */
+  groupRef?: string | null;
   priority: Priority;
   /** "Don't start before this date." Surfaces automatically once it passes. */
   holdUntil?: Date | null;

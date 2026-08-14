@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { GRID_COLUMNS, GRID_FIELDS, type GridField } from '@/lib/grid/columns';
+import { APPLICATION_TYPES, APPLICATION_TYPE_LABELS, APPLICATION_TYPE_SIZE, type ApplicationType } from '@/config/validation';
 import { emptyRow, parsePaste, normalizeCell, type GridRow } from '@/lib/grid/paste';
 import { isRowEmpty, validateRow, type RowErrors } from '@/lib/grid/validate';
 import { normalizePassportNumber } from '@/config/validation';
@@ -43,14 +44,20 @@ export function PassportGrid({
   routes,
   agencyId,
   agencyName,
+  /** When set, this grid belongs to one route and the picker disappears. */
+  fixedRouteId,
 }: {
   routes: RouteOption[];
   /** Set when an admin is entering on an agency's behalf. */
   agencyId?: string;
   agencyName?: string;
+  fixedRouteId?: string;
 }) {
   const [rows, setRows] = useState<GridRow[]>(() => Array.from({ length: INITIAL_ROWS }, emptyRow));
-  const [routeId, setRouteId] = useState<string>(routes[0]?.id ?? '');
+  const [routeId, setRouteId] = useState<string>(fixedRouteId ?? routes[0]?.id ?? '');
+  // Members of one family application share a reference, so they stay together from here
+  // all the way through the queue, the export and the booking file.
+  const [groups, setGroups] = useState<Record<number, string>>({});
   const [rowRoutes, setRowRoutes] = useState<Record<number, string>>({});
   const [duplicates, setDuplicates] = useState<Record<string, string>>({});
   const [report, setReport] = useState<SaveReport | null>(null);
@@ -64,9 +71,30 @@ export function PassportGrid({
   const filledRows = useMemo(() => rows.filter((row) => !isRowEmpty(row)), [rows]);
 
   const validations = useMemo(
-    () => rows.map((row, index) => (isRowEmpty(row) ? null : validateRow(row, rowRoutes[index] ?? routeId))),
-    [rows, routeId, rowRoutes],
+    () =>
+      rows.map((row, index) =>
+        isRowEmpty(row) ? null : validateRow(row, rowRoutes[index] ?? routeId, groups[index] ?? null),
+      ),
+    [rows, routeId, rowRoutes, groups],
   );
+
+  /**
+   * A family that is short of members is worth saying out loud — four rows were expected
+   * and three were typed — but it does not block the save: the missing one may be coming
+   * separately, and losing three good rows over it would help nobody.
+   */
+  const familyWarnings = useMemo(() => {
+    const sizes = new Map<string, { expected: number; actual: number }>();
+    rows.forEach((row, index) => {
+      const ref = groups[index];
+      if (!ref || isRowEmpty(row)) return;
+      const type = (row.applicationType || 'single') as ApplicationType;
+      const entry = sizes.get(ref) ?? { expected: APPLICATION_TYPE_SIZE[type] ?? 1, actual: 0 };
+      entry.actual += 1;
+      sizes.set(ref, entry);
+    });
+    return [...sizes.values()].filter((entry) => entry.actual !== entry.expected);
+  }, [rows, groups]);
 
   /** Duplicate messages are keyed by normalized number, so they follow an edited cell. */
   const duplicateFor = useCallback(
@@ -91,6 +119,27 @@ export function PassportGrid({
       // Typing past the last row adds another, so the grid never runs out underneath you.
       if (rowIndex === next.length - 1 && value !== '') next.push(emptyRow());
       return next;
+    });
+    setReport(null);
+  }, []);
+
+  /** Append the rows of one family application, already marked and linked together. */
+  const addFamily = useCallback((type: ApplicationType) => {
+    const size = APPLICATION_TYPE_SIZE[type];
+    const ref = `fam_${Math.random().toString(36).slice(2, 10)}`;
+
+    setRows((current) => {
+      const trimmed = current.filter((row, index) => !isRowEmpty(row) || index < current.length - 1);
+      const start = trimmed.length;
+
+      setGroups((groupState) => {
+        const next = { ...groupState };
+        for (let i = 0; i < size; i += 1) next[start + i] = ref;
+        return next;
+      });
+
+      const added = Array.from({ length: size }, () => ({ ...emptyRow(), applicationType: type }));
+      return [...trimmed, ...added, emptyRow()];
     });
     setReport(null);
   }, []);
@@ -333,25 +382,45 @@ export function PassportGrid({
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-end gap-4">
-          <div className="space-y-1">
-            <label htmlFor="batch-route" className="text-sm font-medium">
-              Route for this batch
-            </label>
-            <select
-              id="batch-route"
-              value={routeId}
-              onChange={(event) => setRouteId(event.target.value)}
-              className="border-input bg-background flex h-9 w-80 rounded-md border px-3 py-1 text-sm shadow-xs"
-            >
-              {routes.map((route) => (
-                <option key={route.id} value={route.id}>
-                  {route.displayLabel}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-muted-foreground">
-              Chosen once for the batch. Override a single row in its own Route cell.
-            </p>
+          {fixedRouteId ? (
+            <div className="space-y-1">
+              <p className="text-sm font-medium">
+                {routes.find((route) => route.id === fixedRouteId)?.displayLabel}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Everything entered here goes to this route. Other routes have their own page.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <label htmlFor="batch-route" className="text-sm font-medium">
+                Route for this batch
+              </label>
+              <select
+                id="batch-route"
+                value={routeId}
+                onChange={(event) => setRouteId(event.target.value)}
+                className="border-input bg-background flex h-9 w-80 rounded-md border px-3 py-1 text-sm shadow-xs"
+              >
+                {routes.map((route) => (
+                  <option key={route.id} value={route.id}>
+                    {route.displayLabel}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Chosen once for the batch. Override a single row in its own Route cell.
+              </p>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Add as a family:</span>
+            {(['family_2', 'family_4'] as ApplicationType[]).map((type) => (
+              <Button key={type} variant="outline" size="sm" onClick={() => addFamily(type)}>
+                {APPLICATION_TYPE_LABELS[type]}
+              </Button>
+            ))}
           </div>
 
           <div className="ml-auto flex items-center gap-3">
@@ -364,6 +433,15 @@ export function PassportGrid({
           </div>
         </CardContent>
       </Card>
+
+      {familyWarnings.length > 0 ? (
+        <p className="rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-sm">
+          {familyWarnings
+            .map((warning) => `A family of ${warning.expected} has ${warning.actual} row(s) filled in`)
+            .join('. ')}
+          . They will still save — this is only worth a look.
+        </p>
+      ) : null}
 
       {pasteNote ? (
         <p className="rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground">{pasteNote}</p>
@@ -408,6 +486,8 @@ export function PassportGrid({
                     'border-b',
                     duplicate || blocked ? 'bg-destructive/5' : undefined,
                     validation?.ok && !duplicate ? 'bg-emerald-500/5' : undefined,
+                    // A family reads as one block rather than as adjacent strangers.
+                    groups[rowIndex] ? 'border-l-2 border-l-primary/50' : undefined,
                   )}
                 >
                   <td className="px-2 py-1 text-xs text-muted-foreground tabular-nums">{rowIndex + 1}</td>
@@ -415,6 +495,31 @@ export function PassportGrid({
                   {GRID_COLUMNS.map((column) => {
                     const error = errors[column.field];
                     const isDuplicateCell = column.field === 'passportNumber' && duplicate;
+
+                    if (column.field === 'applicationType') {
+                      return (
+                        <td key={column.field} className="px-1 py-1 align-top">
+                          <select
+                            value={row.applicationType || 'single'}
+                            onChange={(event) => setCell(rowIndex, 'applicationType', event.target.value)}
+                            className={cn(
+                              'h-8 w-full rounded border border-transparent bg-transparent px-1 text-xs hover:border-input',
+                              error && 'border-destructive',
+                            )}
+                            aria-label={`Application type, row ${rowIndex + 1}`}
+                          >
+                            {APPLICATION_TYPES.map((type) => (
+                              <option key={type} value={type}>
+                                {APPLICATION_TYPE_LABELS[type]}
+                              </option>
+                            ))}
+                          </select>
+                          {groups[rowIndex] ? (
+                            <p className="px-1 text-[11px] text-muted-foreground">one application</p>
+                          ) : null}
+                        </td>
+                      );
+                    }
 
                     return (
                       <td key={column.field} className="px-1 py-1 align-top">

@@ -54,9 +54,11 @@ async function main(): Promise<void> {
   const { up: up001 } = await import('../migrations/001_initial_collections');
   const { up: up002 } = await import('../migrations/002_bookings_and_charges');
   const { up: up003 } = await import('../migrations/003_payments_and_ledger');
+  const { up: up004 } = await import('../migrations/004_family_applications');
   await up001(client.db('visa_portal_smoke'));
   await up002(client.db('visa_portal_smoke'));
   await up003(client.db('visa_portal_smoke'));
+  await up004(client.db('visa_portal_smoke'));
 
   console.log('Seeding an admin, an agency and an agency user…');
   const { adminActor } = await import('@/lib/dal/actor');
@@ -170,13 +172,26 @@ async function main(): Promise<void> {
   );
 
   // --- milestone 2: entry, listing and the detail view ------------------------------
-  const gridPage = await fetch(`${BASE}/passports/new`, { headers: cookie(agencySession.token) });
+  const chooserPage = await fetch(`${BASE}/passports/new`, { headers: cookie(agencySession.token) });
+  const chooserHtml = await chooserPage.text();
+  check(
+    'the route chooser lists a page per active route, with no fee on it',
+    chooserPage.status === 200 &&
+      chooserHtml.includes('Egypt → France · VFS Cairo') &&
+      !chooserHtml.includes('120.00'),
+  );
+
+  const routeOptions = await dal.listRouteOptions(adminActor(adminId));
+  const gridPage = await fetch(`${BASE}/passports/new/${routeOptions[0]!.id}`, {
+    headers: cookie(agencySession.token),
+  });
   const gridHtml = await gridPage.text();
   check(
-    'the grid entry screen renders with the route picker and no fee',
+    "that route's own entry grid opens, locked to it, with families offered",
     gridPage.status === 200 &&
       gridHtml.includes('Egypt → France · VFS Cairo') &&
       gridHtml.includes('Paste straight from your spreadsheet') &&
+      gridHtml.includes('Family of 4') &&
       !gridHtml.includes('120.00'),
   );
 
