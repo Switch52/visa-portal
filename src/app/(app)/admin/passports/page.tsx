@@ -1,3 +1,4 @@
+import { ExportCurrentView } from '@/components/export-current-view';
 import { PassportFilters as FilterBar } from '@/components/passport-filters';
 import { PassportTable } from '@/components/passport-table';
 import { STATUS_LABELS, type PassportStatus } from '@/config/statuses';
@@ -27,13 +28,17 @@ export default async function AdminPassportsPage(props: PageProps<'/admin/passpo
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Passports</h1>
-        <p className="text-sm text-muted-foreground">
-          {total} matching · {Object.entries(byStatus)
-            .map(([status, count]) => `${count} ${STATUS_LABELS[status as PassportStatus].toLowerCase()}`)
-            .join(' · ') || 'nothing submitted yet'}
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">Passports</h1>
+          <p className="text-sm text-muted-foreground">
+            {total} matching · {Object.entries(byStatus)
+              .map(([status, count]) => `${count} ${STATUS_LABELS[status as PassportStatus].toLowerCase()}`)
+              .join(' · ') || 'nothing submitted yet'}
+          </p>
+        </div>
+        {/* Honours the filters currently applied: what you see is what lands in the file. */}
+        <ExportCurrentView disabled={passports.length === 0} />
       </div>
 
       <FilterBar

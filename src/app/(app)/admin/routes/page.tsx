@@ -12,6 +12,7 @@ import { requireAdmin } from '@/lib/auth/current-user';
 import { listRoutes } from '@/lib/dal/routes';
 import { formatMoney } from '@/lib/money';
 
+import { EditRouteRow } from './edit-route-row';
 import { NewRouteForm } from './new-route-form';
 
 /**
@@ -53,12 +54,13 @@ export default async function RoutesPage() {
                 <TableHead>Center</TableHead>
                 <TableHead>Fee</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {routes.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-muted-foreground">
+                  <TableCell colSpan={7} className="text-muted-foreground">
                     No routes yet. Add the one you are running today.
                   </TableCell>
                 </TableRow>
@@ -76,6 +78,9 @@ export default async function RoutesPage() {
                       <Badge variant={route.active ? 'default' : 'secondary'}>
                         {route.active ? 'Active' : 'Inactive'}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <EditRouteRow route={route} />
                     </TableCell>
                   </TableRow>
                 ))

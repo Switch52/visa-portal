@@ -228,6 +228,80 @@ async function main(): Promise<void> {
     `status ${otherAgencysRecord.status}`,
   );
 
+  // --- milestone 3: the handoff queue and the export --------------------------------
+  const adminDalActor = adminActor(adminId);
+  await dal.changePassportStatuses(adminDalActor, [new Oid(passportId)], 'ready');
+
+  const handoff = await fetch(`${BASE}/admin/handoff`, { headers: cookie(adminSession.token) });
+  const handoffHtml = await handoff.text();
+  check(
+    'the handoff queue shows the ready passport, grouped by route',
+    handoff.status === 200 &&
+      handoffHtml.includes('Egypt → France · VFS Cairo') &&
+      handoffHtml.includes('A99887766'),
+  );
+
+  const exportResponse = await fetch(`${BASE}/api/exports/handoff?ids=${passportId}`, {
+    headers: cookie(adminSession.token),
+  });
+  const disposition = exportResponse.headers.get('content-disposition') ?? '';
+  // Raw bytes, not response.text(): fetch's UTF-8 decode strips a leading BOM, which is
+  // exactly the byte being checked.
+  const csvBytes = Buffer.from(await exportResponse.arrayBuffer());
+  const csv = csvBytes.toString('utf8');
+  const csvLines = csv.replace(/^﻿/, '').trimEnd().split('\r\n');
+
+  check('the export returns a CSV', exportResponse.status === 200 && csv.length > 0, `status ${exportResponse.status}`);
+  check(
+    'it is served as a download with a filename that means something',
+    /filename="handoff_\d{4}-\d{2}-\d{2}_Egypt-France-VFS-Cairo_1\.csv"/.test(disposition),
+    disposition,
+  );
+  check(
+    'the file really starts with the UTF-8 BOM bytes',
+    csvBytes[0] === 0xef && csvBytes[1] === 0xbb && csvBytes[2] === 0xbf,
+    `first bytes ${[...csvBytes.subarray(0, 3)].map((b) => b.toString(16)).join(' ')}`,
+  );
+  check(
+    'the header is the byte-exact one the main dashboard matches on',
+    csvLines[0] ===
+      '"firstName","lastName","passportNumber","passportExpiryDate","dateOfBirth","nationality","gender","contactNumber (optional)","contactNumberDialCode (optional)","contactEmail (optional)"',
+    csvLines[0],
+  );
+  check(
+    'the row carries ISO dates and the passport number as text',
+    csvLines[1]?.includes('"A99887766"') === true && csvLines[1]?.includes('"2032-09-15"') === true,
+    csvLines[1],
+  );
+
+  // The whole point of the two-step handoff: the file changed nothing.
+  const afterExport = await dal.getPassport(adminDalActor, new Oid(passportId));
+  check('exporting left the status alone', afterExport.status === 'ready', afterExport.status);
+
+  const exportAsAgency = await fetch(`${BASE}/api/exports/handoff?ids=${passportId}`, {
+    headers: cookie(agencySession.token),
+  });
+  check(
+    'an agency cannot reach the export endpoint at all',
+    exportAsAgency.status === 403,
+    `status ${exportAsAgency.status}`,
+  );
+
+  const marked = await dal.markAsAdded(adminDalActor, [new Oid(passportId)]);
+  const afterMark = await dal.getPassport(adminDalActor, new Oid(passportId));
+  check(
+    'marking as added is the separate, deliberate step',
+    marked.marked === 1 && afterMark.status === 'added',
+    afterMark.status,
+  );
+
+  const settings = await fetch(`${BASE}/admin/settings/export`, { headers: cookie(adminSession.token) });
+  const settingsHtml = await settings.text();
+  check(
+    'the export format screen renders with the editable template',
+    settings.status === 200 && settingsHtml.includes('contactNumber (optional)'),
+  );
+
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed.`);
   if (failed.length > 0) process.exitCode = 1;

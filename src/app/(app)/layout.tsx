@@ -22,10 +22,12 @@ export default async function AppLayout({ children }: LayoutProps<'/'>) {
   const links = isAdmin && !viewingAs
     ? [
         { href: '/', label: 'Home' },
+        { href: '/admin/handoff', label: 'Handoff' },
         { href: '/admin/passports', label: 'Passports' },
         { href: '/admin/agencies', label: 'Agencies' },
         { href: '/admin/users', label: 'Users' },
         { href: '/admin/routes', label: 'Routes' },
+        { href: '/admin/settings/export', label: 'Export format' },
       ]
     : [
         { href: '/', label: 'Home' },

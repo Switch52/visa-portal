@@ -87,6 +87,60 @@ export async function setUserActiveAction(formData: FormData): Promise<void> {
   revalidatePath('/admin/users');
 }
 
+/**
+ * Editing a route's fee affects future charges only: a charge stores the amount it was
+ * created with, so nothing already on a ledger moves. The screen says so, and the audit
+ * entry records it too.
+ */
+export async function updateRouteAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const state = await run(async (actor) => {
+    const { updateRoute } = await import('@/lib/dal/routes');
+    const { parseMoneyInput } = await import('@/lib/money');
+
+    const currency = String(formData.get('feeCurrency') ?? 'USD');
+    const fee = parseMoneyInput(String(formData.get('fee') ?? '0'), currency);
+
+    await updateRoute(actor, new ObjectId(String(formData.get('routeId'))), {
+      appointmentCenter: String(formData.get('appointmentCenter') ?? ''),
+      feeMinor: fee.amountMinor,
+      feeCurrency: fee.currency,
+      active: formData.get('active') === 'on',
+    });
+  });
+  revalidatePath('/admin/routes');
+  return state;
+}
+
+export async function saveExportTemplateAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const state = await run(async (actor) => {
+    const { saveExportTemplate } = await import('@/lib/dal/settings');
+
+    const headers = formData.getAll('header').map(String);
+    const sources = formData.getAll('source').map(String);
+    const transforms = formData.getAll('transform').map(String);
+
+    await saveExportTemplate(actor, {
+      columns: headers.map((header, index) => ({
+        header,
+        source: sources[index],
+        transform: transforms[index],
+      })),
+      includeBom: formData.get('includeBom') === 'on',
+      excelTextFormulas: formData.get('excelTextFormulas') === 'on',
+    });
+  });
+  revalidatePath('/admin/settings/export');
+  return state;
+}
+
+export async function resetExportTemplateAction(): Promise<void> {
+  await run(async (actor) => {
+    const { resetExportTemplate } = await import('@/lib/dal/settings');
+    await resetExportTemplate(actor);
+  });
+  revalidatePath('/admin/settings/export');
+}
+
 export async function createRouteAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const state = await run(async (actor) => {
     const { parseMoneyInput } = await import('@/lib/money');

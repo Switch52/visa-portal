@@ -52,6 +52,27 @@ export {
 } from './routes';
 
 export {
+  getExportRecords,
+  getHandoffQueue,
+  getHandoffSummary,
+  markAsAdded,
+  recordExport,
+  type MarkAddedResult,
+  type QueueEntry,
+  type QueueGroup,
+  type QueueSummary,
+} from './handoff';
+
+export {
+  getDisplayRate,
+  getExportTemplate,
+  resetExportTemplate,
+  saveDisplayRate,
+  saveExportTemplate,
+  type DisplayRate,
+} from './settings';
+
+export {
   changePassportStatus,
   changePassportStatuses,
   checkDuplicates,
