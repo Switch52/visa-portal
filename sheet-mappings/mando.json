@@ -1,0 +1,23 @@
+{
+  "agency": "mando",
+  "agencyName": "Mando",
+  "file": "mando-client-details.csv",
+  "sheet": "Client Details",
+  "defaultCurrency": "USD",
+  "dateFormat": "DD/MM/YYYY",
+  "defaultApplicationType": "single",
+  "columns": {
+    "firstName": "First Name",
+    "lastName": "Last Name",
+    "nationality": "Nationality",
+    "passportNumber": "Passport Number",
+    "passportExpiryDate": "Passport Expiry Date",
+    "dateOfBirth": "Date of Birth",
+    "gender": "Gender",
+    "added": "Added?",
+    "notes": "Notes"
+  },
+  "ignoredColumns": ["A"],
+  "appendToNotesColumns": [],
+  "notes": "Index column is `A`, and it is not reliable: 97 and 98 each appear twice and 94-95 are missing, so provenance uses the file row number instead. 9 rows carry no passport number and are skipped and reported."
+}

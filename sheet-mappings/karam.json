@@ -1,0 +1,30 @@
+{
+  "agency": "karam",
+  "agencyName": "Karam",
+  "file": "karam-client-details.csv",
+  "sheet": "Client Details",
+  "defaultCurrency": "USD",
+  "dateFormat": "DD/MM/YYYY",
+  "defaultApplicationType": "single",
+  "columns": {
+    "firstName": "First Name",
+    "lastName": "Last Name",
+    "nationality": "Nationality",
+    "passportNumber": "Passport Number",
+    "passportExpiryDate": "Passport Expiry Date",
+    "dateOfBirth": "Date of Birth",
+    "gender": "Gender",
+    "added": "Added?",
+    "notes": "Notes"
+  },
+  "ignoredColumns": [
+    "#",
+    "Address Line 1",
+    "Address Line 2",
+    "City",
+    "State / Province",
+    "Postal Code"
+  ],
+  "appendToNotesColumns": ["(unnamed 15)"],
+  "notes": "The address columns are read past and never stored. The unnamed trailing column holds `OK GO NOW` on three rows — the admin's own working markers — and is appended to that row's notes rather than dropped."
+}
