@@ -47,6 +47,14 @@ function argValue(flag: string): string | null {
 interface Corrections {
   /** Normalized passport number → the agency key that keeps it. */
   duplicateOwners?: Record<string, string>;
+  /**
+   * Passports left out of the migration on purpose, with the reason.
+   *
+   * Different from an undecided duplicate: this is a decision — leave it out for now — and
+   * the report stops asking about it, while still listing what was excluded and why so it
+   * never quietly disappears.
+   */
+  excludedPassports?: Record<string, string>;
   /** `<agency>:<row>` → field overrides for that row. */
   rows?: Record<string, Record<string, string>>;
 }
@@ -184,10 +192,14 @@ async function main(): Promise<void> {
   );
 
   // A duplicate with no decision recorded is held back from both agencies rather than
-  // being handed to whichever sheet happened to be read first.
+  // being handed to whichever sheet happened to be read first. One that has been
+  // deliberately excluded is also held back, but is not an open question.
   const owners = corrections.duplicateOwners ?? {};
-  const undecided = crossDuplicates.filter((duplicate) => !owners[duplicate.normalized]);
-  const heldBack = new Set(undecided.map((duplicate) => duplicate.normalized));
+  const excluded = corrections.excludedPassports ?? {};
+  const undecided = crossDuplicates.filter(
+    (duplicate) => !owners[duplicate.normalized] && !excluded[duplicate.normalized],
+  );
+  const heldBack = new Set([...undecided.map((duplicate) => duplicate.normalized), ...Object.keys(excluded)]);
 
   // --- open a database ------------------------------------------------------------
   let stopScratch: (() => Promise<void>) | null = null;
@@ -299,6 +311,14 @@ async function main(): Promise<void> {
     let imported = 0;
 
     for (const row of transform.rows) {
+      if (excluded[row.normalized]) {
+        blocked.push({
+          sourceRow: row.sourceRow,
+          passportNumber: row.passportNumber,
+          reason: `Left out on purpose: ${excluded[row.normalized]}`,
+        });
+        continue;
+      }
       if (heldBack.has(row.normalized)) {
         blocked.push({
           sourceRow: row.sourceRow,
@@ -376,6 +396,10 @@ async function main(): Promise<void> {
     outcomes,
     crossDuplicates,
     undecided,
+    decisions: {
+      ...Object.fromEntries(Object.entries(owners).map(([number, agency]) => [number, `kept by ${agency}`])),
+      ...Object.fromEntries(Object.entries(excluded).map(([number, reason]) => [number, `left out — ${reason}`])),
+    },
     tracker,
     openingBalances,
     balances,
@@ -425,6 +449,8 @@ function renderReport(data: {
   outcomes: SheetOutcome[];
   crossDuplicates: ReturnType<typeof findCrossAgencyDuplicates>;
   undecided: ReturnType<typeof findCrossAgencyDuplicates>;
+  /** Normalized number → what was decided about it, for the ones that are settled. */
+  decisions: Record<string, string>;
   tracker: ReturnType<typeof readClientTracker>;
   openingBalances: { agency: string; currency: string; amountMinor: number }[];
   balances: Awaited<ReturnType<typeof import('@/lib/dal').getBalanceOverview>>;
@@ -485,6 +511,25 @@ function renderReport(data: {
   p(`### Cross-agency duplicates (${data.crossDuplicates.length})`, '');
   if (data.crossDuplicates.length === 0) {
     p('None.', '');
+  } else if (data.undecided.length === 0) {
+    p(
+      `All ${data.crossDuplicates.length} have a decision on file — nothing here is waiting on you.`,
+      '',
+      table(
+        ['Passport', 'Appears under', 'Decision'],
+        data.crossDuplicates.map((duplicate) => [
+          duplicate.normalized,
+          duplicate.occurrences
+            .map((occurrence) => `${data.agencyNames.get(occurrence.agency) ?? occurrence.agency} row ${occurrence.sourceRow}`)
+            .join(', '),
+          data.decisions[duplicate.normalized] ?? 'excluded',
+        ]),
+      ),
+      'They are out of the portal entirely, so the unique index stays absolute and neither',
+      'agency has a passport the other also has. Revisit by editing `private/corrections.json`',
+      'and re-running — nothing about this is permanent.',
+      '',
+    );
   } else {
     p(
       'The same passport under more than one agency. **Neither copy was imported**: pick who owns',
