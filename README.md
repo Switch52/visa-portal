@@ -30,6 +30,8 @@ console instead of being emailed, so a local run needs no third-party service.
 | `npm run create-admin` | Bootstrap the first administrator |
 | `npm run seed-route` | Create a route from the command line (idempotent) |
 | `npm run profile` | Re-run the migration data profiler over `private/` |
+| `npm run preflight` | Check a real environment is ready — read-only, safe against production |
+| `npm run migrate-sheets` | Dry-run the sheet migration into a throwaway database (`-- --commit` for real) |
 
 ## How it is put together
 
@@ -110,6 +112,12 @@ normalized form is stored alongside the original.
 | 5 | Payments & ledgers | ✅ |
 | 6 | Dashboards, audit log, view-as, notifications | ✅ |
 | 7 | Migration + deploy | — |
+
+## Deploying
+
+Nothing is deployed yet: there is no cluster and no hosted app, and both need accounts only
+the owner can create. [`DEPLOY.md`](./DEPLOY.md) is the runbook — Atlas, Vercel, then the
+scripted steps that bring it to life and the migration itself.
 
 ## Handling real data
 

@@ -14,7 +14,8 @@
     "profile": "node scripts/profile-sheets.mjs",
     "smoke": "tsx scripts/smoke.ts",
     "seed-route": "tsx scripts/seed-route.ts",
-    "migrate-sheets": "tsx scripts/migrate-sheets.ts"
+    "migrate-sheets": "tsx scripts/migrate-sheets.ts",
+    "preflight": "tsx scripts/preflight.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
