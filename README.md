@@ -14,17 +14,22 @@ npm install
 cp .env.example .env.local     # fill in MONGODB_URI and AUTH_SECRET
 npm run migrate                # create collections, validators and indexes
 npm run create-admin -- --email you@example.com --name "Your Name"
-npm run dev
 ```
 
-Sign in at `/login`. With `RESEND_API_KEY` unset, the sign-in code is printed to the server
-console instead of being emailed, so a local run needs no third-party service.
+**Nothing is hosted on a laptop.** The app runs on Vercel; the database is Atlas. Scripts
+here (`migrate`, `preflight`, `seed-route`, `migrate-sheets`) connect out to that cluster
+and start no server of their own. Tests use a MongoDB that exists only inside the test
+process and is destroyed when it exits.
+
+Sign in at the deployment's `/login`. With `RESEND_API_KEY` unset, sign-in codes print to
+the server log instead of being emailed — which means only someone who can read the logs
+can get in.
 
 | Script | What it does |
 |---|---|
 | `npm run dev` / `build` / `start` | The Next.js app |
 | `npm test` | Every invariant, across eleven suites (241) |
-| `npm run smoke` | Boots the built app against a throwaway database and checks the real HTTP surface |
+| `npm run smoke` | Checks a **deployment's** HTTP surface — `SMOKE_BASE_URL=… npm run smoke`. Never starts a local server |
 | `npm run typecheck` / `lint` | TypeScript, ESLint |
 | `npm run migrate` | Apply migrations (`-- --status`, `-- --down <id>`) |
 | `npm run create-admin` | Bootstrap the first administrator |

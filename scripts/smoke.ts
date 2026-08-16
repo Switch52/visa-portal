@@ -1,22 +1,24 @@
 /**
- * End-to-end smoke test: boot the built app against a throwaway database and check that
- * the real HTTP surface behaves — pages render, unauthenticated requests are turned away,
- * and an agency session cannot reach an admin screen.
+ * End-to-end smoke test: check the real HTTP surface — pages render, unauthenticated
+ * requests are turned away, an agency session cannot reach an admin screen.
  *
  * The unit tests prove the rules; this proves the thing actually runs.
  *
- *   npm run build && npm run smoke
+ * **Nothing is hosted on this machine.** Point it at a deployment:
+ *
+ *   SMOKE_BASE_URL=https://visa-portal.vercel.app npm run smoke
+ *
+ * It needs the database that deployment uses, so `MONGODB_URI` must be the same cluster —
+ * the checks sign sessions and seed records directly, then exercise them over HTTP.
+ *
+ * Passing no URL is refused rather than quietly falling back to starting a local server.
  */
-
-import { spawn, type ChildProcess } from 'node:child_process';
 
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 
-const PORT = Number(process.env.SMOKE_PORT ?? 3999);
-const BASE = `http://127.0.0.1:${PORT}`;
+const BASE = process.env.SMOKE_BASE_URL ?? '';
 
 let replSet: MongoMemoryReplSet | null = null;
-let server: ChildProcess | null = null;
 const results: { name: string; ok: boolean; detail?: string }[] = [];
 
 function check(name: string, ok: boolean, detail?: string): void {
@@ -24,6 +26,7 @@ function check(name: string, ok: boolean, detail?: string): void {
   console.log(`${ok ? '  ✔' : '  ✖'} ${name}${detail && !ok ? ` — ${detail}` : ''}`);
 }
 
+/** The deployment should already be up; this only tolerates a cold start. */
 async function waitForServer(timeoutMs = 60_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -39,6 +42,14 @@ async function waitForServer(timeoutMs = 60_000): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  if (!BASE) {
+    throw new Error(
+      'SMOKE_BASE_URL is not set.\n' +
+        'This check runs against a deployment, not against this machine — nothing is hosted here.\n' +
+        'Example: SMOKE_BASE_URL=https://visa-portal.vercel.app npm run smoke',
+    );
+  }
+
   console.log('Starting a throwaway MongoDB…');
   replSet = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
   const uri = replSet.getUri();
@@ -100,16 +111,7 @@ async function main(): Promise<void> {
   const adminSession = await createSession(adminId);
   const agencySession = await createSession(new ObjectId(agencyUser.id));
 
-  console.log(`Starting the built app on ${BASE}…`);
-  server = spawn('npx', ['next', 'start', '-p', String(PORT)], {
-    env: { ...process.env },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  server.stderr?.on('data', (chunk: Buffer) => {
-    const text = chunk.toString();
-    if (text.includes('Error')) process.stderr.write(`    [server] ${text}`);
-  });
-
+  console.log(`Checking ${BASE} …`);
   await waitForServer();
   console.log('\nChecks:');
 
@@ -483,7 +485,6 @@ main()
     process.exitCode = 1;
   })
   .finally(async () => {
-    server?.kill('SIGTERM');
     const { getMongoClient } = await import('@/lib/mongodb');
     const client = await getMongoClient().catch(() => null);
     await client?.close();
