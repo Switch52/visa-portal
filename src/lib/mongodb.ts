@@ -42,7 +42,16 @@ function connect(): Promise<MongoClient> {
 
 export function getMongoClient(): Promise<MongoClient> {
   if (!globalThis.__visaPortalMongoClient) {
-    globalThis.__visaPortalMongoClient = connect();
+    // Cache the attempt, but never cache a failure. A rejected promise left in the
+    // cache is awaited by every later request, so one unreachable moment — a firewall
+    // rule not yet applied, a brief Atlas blip, a DNS hiccup during boot — bricks the
+    // process until someone restarts it. Worse, it then fails *instantly*, which reads
+    // like a configuration error rather than a network one and sends you looking in
+    // the wrong place entirely.
+    globalThis.__visaPortalMongoClient = connect().catch((err: unknown) => {
+      globalThis.__visaPortalMongoClient = undefined;
+      throw err;
+    });
   }
   return globalThis.__visaPortalMongoClient;
 }
