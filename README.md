@@ -121,18 +121,22 @@ normalized form is stored alongside the original.
 
 ## Working on it
 
-Every change goes through a pull request; `main` is not committed to directly.
+One branch: `main`. Work goes straight onto it.
 
-Before opening one, these all have to pass:
+Which puts all the weight on this, before every commit:
 
 ```bash
 npm run typecheck && npm run lint && npm test
 ```
 
-Running them on GitHub instead — so a green tick sits beside the diff rather than a claim
-in a message — needs a workflow file in `.github/workflows/`, which a token has to carry
-the `workflow` scope to push. Worth doing: it is where the evidence for a change comes
-from now that nothing runs locally.
+With no review step between a change and `main`, that command is the only thing standing
+between a mistake and the branch everything deploys from. Run it — not the parts of it
+that seem relevant.
+
+Running it on GitHub as well would mean a green tick recorded next to each commit rather
+than a claim in a chat message. That needs a workflow file in `.github/workflows/`, which
+a token has to carry the `workflow` scope to push. It matters more now than it did under
+review, not less.
 
 ## Deploying
 
