@@ -29,10 +29,10 @@ services:
     # what should face the internet. Publishing this on every interface would put
     # the app itself there, in cleartext.
     #
-    # host:container. Point the reverse proxy at 127.0.0.1:16681; the public port
+    # host:container. Point the reverse proxy at 127.0.0.1:3007; the public port
     # is 443 and is the proxy's business, not this file's.
     ports:
-      - "127.0.0.1:16681:16681"
+      - "127.0.0.1:3007:3007"
 
     # Next drains in-flight requests on SIGTERM; give it room to finish rather than
     # cutting off a booking import halfway.

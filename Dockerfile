@@ -41,11 +41,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Not 3000. Nothing else on the host is likely to want 16681, so the container can
-# be published without first auditing what else is listening, and a stray process
-# that assumes the default port will not find this one. Chosen below Linux's
-# ephemeral range (32768-60999) so it can never collide with an outbound socket.
-ENV PORT=16681
+# Not 3000, so the container does not fight whatever else on the host took the
+# default. Only ever reached through the reverse proxy, which listens on 443.
+ENV PORT=3007
 
 # Without this the server binds to localhost inside the container, which from the
 # outside looks exactly like a container that starts and then refuses connections.
@@ -62,7 +60,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
 USER nextjs
-EXPOSE 16681
+EXPOSE 3007
 
 # Shallow by design: it answers without touching MongoDB. A health check that
 # pings the database turns one slow Atlas moment into every container being
