@@ -30,5 +30,10 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.png$).*)'],
+  // `api/health` is exempt: it is the container's liveness probe and has to answer
+  // before anyone has signed in. Left in, it would be redirected to /login, the probe
+  // would follow the redirect to a 200 and report healthy — a check that passes without
+  // ever reaching the thing it claims to be checking. The route returns a fixed
+  // {status:"ok"} and reads nothing, so exempting it discloses nothing.
+  matcher: ['/((?!api/health|_next/static|_next/image|favicon.ico|.*\\.png$).*)'],
 };

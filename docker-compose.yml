@@ -1,0 +1,54 @@
+# Running the portal on a server that has Docker.
+#
+#   docker compose up -d --build
+#
+# There is no database service here on purpose: MongoDB is Atlas, and the container
+# connects out to it. Nothing in this file listens except the app.
+#
+# Secrets come from an `.env` file sitting next to this one **on the server** — not
+# from the repository, and not from build arguments. Copy `.env.example` to `.env`
+# there and fill it in. Compose reads it automatically; it is never baked into the
+# image, so the same image can be promoted from staging to production unchanged.
+
+services:
+  app:
+    build:
+      context: .
+    image: visa-portal:latest
+    restart: unless-stopped
+
+    environment:
+      MONGODB_URI: ${MONGODB_URI:?set MONGODB_URI in .env}
+      MONGODB_DB: ${MONGODB_DB:-visa_portal}
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      APP_URL: ${APP_URL:?set APP_URL in .env — notification links point at it}
+
+    # Bound to the loopback interface, because a reverse proxy terminating TLS is
+    # what should face the internet. Publishing this on every interface would put
+    # the app itself there, in cleartext.
+    #
+    # host:container. Point the reverse proxy at 127.0.0.1:3007; the public port
+    # is 443 and is the proxy's business, not this file's.
+    ports:
+      - "127.0.0.1:3007:3007"
+
+    # Next drains in-flight requests on SIGTERM; give it room to finish rather than
+    # cutting off a booking import halfway.
+    stop_grace_period: 30s
+
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+process.env.PORT+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+    logging:
+      driver: json-file
+      options:
+        # Sign-in codes print here while RESEND_API_KEY is unset. Capped so a long
+        # uptime cannot fill the host's disk.
+        max-size: "10m"
+        max-file: "3"

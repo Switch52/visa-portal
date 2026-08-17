@@ -18,10 +18,14 @@ rest is scripted.
    Do not accept the default of N. Virginia: at ~9,300km it is triple the latency on every
    screen that touches the database.
 2. **Encryption at rest** is on by default on Atlas; leave it on.
-3. **Network access → IP allowlist.** Add your own address for running scripts. Vercel's
-   functions do not have fixed addresses, so for them either allow `0.0.0.0/0` and rely on
-   the password, or use Atlas's Vercel integration, which is the better option if it is
-   available on the free tier when you get there.
+3. **Network access → IP allowlist.** Two entries: your own address, for running scripts
+   from the laptop, and **the server's static IP**, for the container.
+
+   This is one real advantage of hosting it yourself. A serverless host has no fixed
+   outbound address, which forces `0.0.0.0/0` — the whole internet, with the password as
+   the only thing in the way. A server you own has one address, so the database can be
+   reachable from exactly that machine and nowhere else. Take it: a leaked connection
+   string is then not enough on its own.
 4. **Database access → add a user.** Two users, because the scripts and the app need
    different powers and there is no reason to give a web request the stronger one:
 
@@ -63,22 +67,53 @@ invisible until they bite: a migration that was never applied, an index that sil
 failed to build, a cluster that cannot do transactions, no admin account so nobody can
 log in.
 
-## 2. The app — Vercel
+## 2. The app — Docker, on your own server
 
-1. **New project → import `Switch52/visa-portal`.** Framework detection handles the rest;
-   there is no build configuration to write.
-2. Environment variables, for Production and Preview both:
+On the server, once it has Docker and a checkout of the repository:
 
-   | Variable | Value |
-   |---|---|
-   | `MONGODB_URI` | the Atlas string, built with the `readWrite`-only `visa_portal_app` user — not the one in your `.env.local` |
-   | `MONGODB_DB` | `visa_portal` |
-   | `AUTH_SECRET` | the random string from above |
-   | `RESEND_API_KEY` | from Resend, once the domain is verified |
-   | `EMAIL_FROM` | e.g. `Passport Portal <portal@yourdomain.com>` |
-   | `APP_URL` | the production URL — this is what notification links point at |
+```bash
+cp .env.example .env              # next to docker-compose.yml, on the server
+                                  # fill in MONGODB_URI, AUTH_SECRET, APP_URL
+docker compose up -d --build
+docker compose logs -f app        # sign-in codes appear here until Resend is set up
+```
 
-3. Deploy, then open `/login`. Nothing else is reachable without a session.
+| Variable | Value |
+|---|---|
+| `MONGODB_URI` | the Atlas string, built with the `readWrite`-only `visa_portal_app` user — **not** the one in your `.env.local` |
+| `MONGODB_DB` | `visa_portal` |
+| `AUTH_SECRET` | the random string from above |
+| `RESEND_API_KEY` | from Resend, once the domain is verified |
+| `EMAIL_FROM` | e.g. `Passport Portal <portal@yourdomain.com>` |
+| `APP_URL` | the public URL — this is what notification links point at |
+
+**Nothing above is a build argument.** `docker build --build-arg` writes the value into
+the image's layer history, where `docker history` will read it back out months later even
+if a subsequent line deletes the file. These are read at runtime, per request, so the
+image holds no secret and the same image can move from staging to production untouched.
+
+**Put a reverse proxy in front of it.** Compose binds to `127.0.0.1:3007`, not to every
+interface, because what should face the internet is nginx or Caddy terminating TLS.
+Sessions ride an httpOnly cookie; over plain HTTP that cookie crosses the network in
+cleartext on every request. If nginx is the proxy, disable buffering — the app streams,
+and buffering makes every page feel like it arrives all at once, late.
+
+**Updating** is a rebuild and a replace; the database is untouched:
+
+```bash
+git pull && docker compose up -d --build
+```
+
+If a release adds a migration, run `npm run migrate` from your laptop **before** rolling
+out the new image, so the schema is ready for the code that expects it.
+
+**Two things to know if you ever run more than one container.** Server Actions are
+encrypted with a key generated at build time, so every replica must come from the *same
+image* or you get "Failed to find Server Action" errors — build once, deploy that. And the
+page cache lives in each container's memory, so replicas can briefly disagree about cached
+pages. Neither matters for a single container, which is what the pilot needs.
+
+Then open `/login`. Nothing else is reachable without a session.
 
 **Email:** until `RESEND_API_KEY` is set, sign-in codes print to the server log instead of
 being sent — which means nobody but you can log in. Resend needs a verified domain before
