@@ -40,7 +40,13 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV PORT=3000
+
+# Not 3000. Nothing else on the host is likely to want 16681, so the container can
+# be published without first auditing what else is listening, and a stray process
+# that assumes the default port will not find this one. Chosen below Linux's
+# ephemeral range (32768-60999) so it can never collide with an outbound socket.
+ENV PORT=16681
+
 # Without this the server binds to localhost inside the container, which from the
 # outside looks exactly like a container that starts and then refuses connections.
 ENV HOSTNAME=0.0.0.0
@@ -56,13 +62,16 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
 USER nextjs
-EXPOSE 3000
+EXPOSE 16681
 
 # Shallow by design: it answers without touching MongoDB. A health check that
 # pings the database turns one slow Atlas moment into every container being
 # killed at once, which is a worse outage than the one it was watching for.
+#
+# Reads $PORT rather than repeating the number, so overriding the port at run time
+# cannot leave the probe knocking on a door nobody is behind.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 # Next registers its own SIGTERM handler and drains in-flight requests, so the
 # server is PID 1 on purpose. Give it 10-30s to stop before killing it.

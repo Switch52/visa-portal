@@ -26,18 +26,20 @@ services:
       APP_URL: ${APP_URL:?set APP_URL in .env — notification links point at it}
 
     # Bound to the loopback interface, because a reverse proxy terminating TLS is
-    # what should face the internet. Publishing 3000 on every interface would put
-    # the app itself there, in cleartext. Change to "3000:3000" only if something
-    # else is already terminating TLS in front of it.
+    # what should face the internet. Publishing this on every interface would put
+    # the app itself there, in cleartext.
+    #
+    # host:container. Point the reverse proxy at 127.0.0.1:16681; the public port
+    # is 443 and is the proxy's business, not this file's.
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:16681:16681"
 
     # Next drains in-flight requests on SIGTERM; give it room to finish rather than
     # cutting off a booking import halfway.
     stop_grace_period: 30s
 
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+process.env.PORT+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       start_period: 20s

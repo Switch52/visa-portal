@@ -92,7 +92,7 @@ the image's layer history, where `docker history` will read it back out months l
 if a subsequent line deletes the file. These are read at runtime, per request, so the
 image holds no secret and the same image can move from staging to production untouched.
 
-**Put a reverse proxy in front of it.** Compose binds to `127.0.0.1:3000`, not to every
+**Put a reverse proxy in front of it.** Compose binds to `127.0.0.1:16681`, not to every
 interface, because what should face the internet is nginx or Caddy terminating TLS.
 Sessions ride an httpOnly cookie; over plain HTTP that cookie crosses the network in
 cleartext on every request. If nginx is the proxy, disable buffering — the app streams,
