@@ -11,17 +11,43 @@ rest is scripted.
 
 ## 1. The database — MongoDB Atlas
 
-1. Create a free **M0** cluster. Region: the one closest to Cairo (`eu-south-1`, Milan, or
-   `me-south-1`, Bahrain) — this is the difference between a snappy screen and a sluggish one.
+1. Create a free **M0** cluster. Region: **AWS Frankfurt (`eu-central-1`)** — the closest M0
+   region to Cairo at ~2,900km, roughly 60-80ms. The free tier offers only a handful of
+   regions, and Milan and Bahrain are not among them however close they look on a map. The
+   next best are Belgium and Amsterdam (~3,200km), then Ireland and Mumbai (~4,400km).
+   Do not accept the default of N. Virginia: at ~9,300km it is triple the latency on every
+   screen that touches the database.
 2. **Encryption at rest** is on by default on Atlas; leave it on.
 3. **Network access → IP allowlist.** Add your own address for running scripts. Vercel's
    functions do not have fixed addresses, so for them either allow `0.0.0.0/0` and rely on
    the password, or use Atlas's Vercel integration, which is the better option if it is
    available on the free tier when you get there.
-4. **Database access → add a user** with `readWrite` on `visa_portal` only. Not an admin
-   user, and not the same password as anything else.
+4. **Database access → add a user.** Two users, because the scripts and the app need
+   different powers and there is no reason to give a web request the stronger one:
+
+   | User | Privileges on `visa_portal` | Used by |
+   |---|---|---|
+   | `visa_portal_admin` | `readWrite` **and** `dbAdmin` | your laptop — `.env.local` |
+   | `visa_portal_app` | `readWrite` only | Vercel |
+
+   `dbAdmin` is what applies the `$jsonSchema` validators: `readWrite` alone cannot run
+   `collMod`, and the migrations stop partway through with a permissions error. Scoped to
+   one database it is a narrow role — schema and indexes on `visa_portal`, no documents,
+   no other database, and nothing like `atlasAdmin`.
+
+   Keep them separate. Nothing a web request does should be able to drop an index or
+   rewrite a validator, and the credential that sits in a hosting dashboard is the one
+   most likely to leak. Neither password should match anything else you own.
 5. Copy the connection string. It looks like:
    `mongodb+srv://USER:PASSWORD@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority`
+
+Two traps at this step, both of which look like the cluster is broken when it is not:
+
+- **A password containing `@`, `:`, `/` or `#` must be percent-encoded** in the string, or
+  the connection fails without saying why. Atlas's *Autogenerate Secure Password* avoids it.
+- **The allowlist is tied to the network you were on when you added it.** Move to a café or
+  a phone hotspot and every script hangs until that address is added too. When something
+  worked yesterday and times out today, look here first.
 
 Then, locally:
 
@@ -45,7 +71,7 @@ log in.
 
    | Variable | Value |
    |---|---|
-   | `MONGODB_URI` | the Atlas string |
+   | `MONGODB_URI` | the Atlas string, built with the `readWrite`-only `visa_portal_app` user — not the one in your `.env.local` |
    | `MONGODB_DB` | `visa_portal` |
    | `AUTH_SECRET` | the random string from above |
    | `RESEND_API_KEY` | from Resend, once the domain is verified |
