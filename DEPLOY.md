@@ -22,8 +22,22 @@ rest is scripted.
    functions do not have fixed addresses, so for them either allow `0.0.0.0/0` and rely on
    the password, or use Atlas's Vercel integration, which is the better option if it is
    available on the free tier when you get there.
-4. **Database access → add a user** with `readWrite` on `visa_portal` only. Not an admin
-   user, and not the same password as anything else.
+4. **Database access → add a user.** Two users, because the scripts and the app need
+   different powers and there is no reason to give a web request the stronger one:
+
+   | User | Privileges on `visa_portal` | Used by |
+   |---|---|---|
+   | `visa_portal_admin` | `readWrite` **and** `dbAdmin` | your laptop — `.env.local` |
+   | `visa_portal_app` | `readWrite` only | Vercel |
+
+   `dbAdmin` is what applies the `$jsonSchema` validators: `readWrite` alone cannot run
+   `collMod`, and the migrations stop partway through with a permissions error. Scoped to
+   one database it is a narrow role — schema and indexes on `visa_portal`, no documents,
+   no other database, and nothing like `atlasAdmin`.
+
+   Keep them separate. Nothing a web request does should be able to drop an index or
+   rewrite a validator, and the credential that sits in a hosting dashboard is the one
+   most likely to leak. Neither password should match anything else you own.
 5. Copy the connection string. It looks like:
    `mongodb+srv://USER:PASSWORD@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority`
 
@@ -57,7 +71,7 @@ log in.
 
    | Variable | Value |
    |---|---|
-   | `MONGODB_URI` | the Atlas string |
+   | `MONGODB_URI` | the Atlas string, built with the `readWrite`-only `visa_portal_app` user — not the one in your `.env.local` |
    | `MONGODB_DB` | `visa_portal` |
    | `AUTH_SECRET` | the random string from above |
    | `RESEND_API_KEY` | from Resend, once the domain is verified |
