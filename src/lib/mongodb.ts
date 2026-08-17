@@ -31,7 +31,11 @@ declare global {
 
 function connect(): Promise<MongoClient> {
   if (!uri) {
-    throw new Error('MONGODB_URI is not set. Copy .env.example to .env.local and fill it in.');
+    throw new Error(
+      'MONGODB_URI is not set. On a laptop: copy .env.example to .env.local and fill it in. ' +
+        'In a container: it is supplied at run time, from a .env beside docker-compose.yml ' +
+        'or the host\'s environment panel — never as a build argument.',
+    );
   }
   return new MongoClient(uri, options).connect();
 }
