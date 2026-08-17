@@ -16,7 +16,8 @@ npm run migrate                # create collections, validators and indexes
 npm run create-admin -- --email you@example.com --name "Your Name"
 ```
 
-**Nothing is hosted on a laptop.** The app runs on Vercel; the database is Atlas. Scripts
+**Nothing is hosted on a laptop.** The app runs as a Docker container on our own server;
+the database is Atlas. Scripts
 here (`migrate`, `preflight`, `seed-route`, `migrate-sheets`) connect out to that cluster
 and start no server of their own. Tests use a MongoDB that exists only inside the test
 process and is destroyed when it exits.
@@ -28,7 +29,7 @@ can get in.
 | Script | What it does |
 |---|---|
 | `npm run dev` / `build` / `start` | The Next.js app |
-| `npm test` | Every invariant, across eleven suites (241) |
+| `npm test` | Every invariant — 264 tests, all passing |
 | `npm run smoke` | Checks a **deployment's** HTTP surface — `SMOKE_BASE_URL=… npm run smoke`. Never starts a local server |
 | `npm run typecheck` / `lint` | TypeScript, ESLint |
 | `npm run migrate` | Apply migrations (`-- --status`, `-- --down <id>`) |
@@ -120,9 +121,18 @@ normalized form is stored alongside the original.
 
 ## Deploying
 
-Nothing is deployed yet: there is no cluster and no hosted app, and both need accounts only
-the owner can create. [`DEPLOY.md`](./DEPLOY.md) is the runbook — Atlas, Vercel, then the
-scripted steps that bring it to life and the migration itself.
+The Atlas cluster is live — schema, indexes, validators, an administrator and both routes.
+The app is not hosted yet. [`DEPLOY.md`](./DEPLOY.md) is the runbook.
+
+It ships as a container: `output: 'standalone'` in `next.config.ts`, a three-stage
+[`Dockerfile`](./Dockerfile), and [`docker-compose.yml`](./docker-compose.yml) for the
+server. No secret is a build argument — `MONGODB_URI` and `AUTH_SECRET` are read at
+runtime, so the image holds nothing worth stealing and the same image can be promoted
+between environments unchanged.
+
+`/api/health` is the liveness probe. It answers without touching MongoDB, deliberately:
+a probe that pings the database fails every container at once when the database is merely
+slow, and restarts the one part that was still working.
 
 ## Handling real data
 
