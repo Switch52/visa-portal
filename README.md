@@ -119,6 +119,21 @@ normalized form is stored alongside the original.
 | 6 | Dashboards, audit log, view-as, notifications | ✅ |
 | 7 | Migration + deploy | — |
 
+## Working on it
+
+Every change goes through a pull request; `main` is not committed to directly.
+
+Before opening one, these all have to pass:
+
+```bash
+npm run typecheck && npm run lint && npm test
+```
+
+Running them on GitHub instead — so a green tick sits beside the diff rather than a claim
+in a message — needs a workflow file in `.github/workflows/`, which a token has to carry
+the `workflow` scope to push. Worth doing: it is where the evidence for a change comes
+from now that nothing runs locally.
+
 ## Deploying
 
 The Atlas cluster is live — schema, indexes, validators, an administrator and both routes.
