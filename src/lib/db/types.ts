@@ -47,6 +47,12 @@ export interface UserDoc extends Timestamps {
   /** Null for admins. Required for agency users — enforced by the $jsonSchema validator. */
   agencyId: ObjectId | null;
   active: boolean;
+  /**
+   * The Clerk identity behind this record, or null until their first sign-in. Clerk
+   * says who someone is; this collection says what they may do, and `active` is what
+   * makes revoking that immediate.
+   */
+  clerkUserId?: string | null;
   lastLoginAt?: Date | null;
   invitedBy?: ObjectId | null;
   invitedAt?: Date | null;

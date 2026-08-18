@@ -1,11 +1,10 @@
 # Deploying
 
-Nothing below has been done yet: there is no cluster and no hosted app. Every test and
-every migration dry run so far has run against a throwaway MongoDB that is created for the
-run and destroyed at the end.
+The Atlas cluster is live: schema, indexes, validators, an administrator and both routes.
+It holds no real data yet — the sheet migration has not been committed to it.
 
-Both steps need accounts that only you can create. Once the connection string exists, the
-rest is scripted.
+The app runs as a container on our own server. Authentication is Clerk; authorization is
+still this app's `users` collection.
 
 ---
 
@@ -32,7 +31,7 @@ rest is scripted.
    | User | Privileges on `visa_portal` | Used by |
    |---|---|---|
    | `visa_portal_admin` | `readWrite` **and** `dbAdmin` | your laptop — `.env.local` |
-   | `visa_portal_app` | `readWrite` only | Vercel |
+   | `visa_portal_app` | `readWrite` only | the container, on the server |
 
    `dbAdmin` is what applies the `$jsonSchema` validators: `readWrite` alone cannot run
    `collMod`, and the migrations stop partway through with a permissions error. Scoped to
@@ -67,25 +66,53 @@ invisible until they bite: a migration that was never applied, an index that sil
 failed to build, a cluster that cannot do transactions, no admin account so nobody can
 log in.
 
-## 2. The app — Docker, on your own server
+## 2. Authentication — Clerk
+
+1. Create an application at **clerk.com**. Enable **Email** as the sign-in method; the
+   code-by-email flow is the same experience this app used to implement itself.
+2. **API keys** → copy the publishable key (`pk_…`) and the secret key (`sk_…`).
+3. **Restrictions → Sign-up mode: Restricted.** Not load-bearing — an uninvited Clerk
+   account resolves to no actor and lands on `/no-access` regardless — but there is no
+   reason to let strangers create accounts against your instance at all.
+
+Clerk answers *who someone is*. This app's `users` collection still answers *what they may
+do*, and is re-read on every request. That is what keeps two properties true:
+
+- **invite-only** — a Clerk account with no invited record sees nothing;
+- **deactivation is immediate** — `active: false` ends access on the next click, rather
+  than whenever a token happens to expire.
+
+So `npm run create-admin` and the invite screen still govern access. Creating a Clerk
+account grants nothing on its own.
+
+## 3. The app — Docker, on your own server
 
 On the server, once it has Docker and a checkout of the repository:
 
 ```bash
 cp .env.example .env              # next to docker-compose.yml, on the server
-                                  # fill in MONGODB_URI, AUTH_SECRET, APP_URL
+                                  # fill in MONGODB_URI, the two Clerk keys,
+                                  # AUTH_SECRET and APP_URL
 docker compose up -d --build
-docker compose logs -f app        # sign-in codes appear here until Resend is set up
+docker compose logs -f app        # refuses to start if any required value is missing
 ```
 
 | Variable | Value |
 |---|---|
 | `MONGODB_URI` | the Atlas string, built with the `readWrite`-only `visa_portal_app` user — **not** the one in your `.env.local` |
 | `MONGODB_DB` | `visa_portal` |
+| `CLERK_PUBLISHABLE_KEY` | Clerk dashboard → API keys, `pk_live_…` |
+| `CLERK_SECRET_KEY` | Clerk dashboard → API keys, `sk_live_…` — server-side only |
 | `AUTH_SECRET` | the random string from above |
 | `RESEND_API_KEY` | from Resend, once the domain is verified |
 | `EMAIL_FROM` | e.g. `Passport Portal <portal@yourdomain.com>` |
 | `APP_URL` | the public URL — this is what notification links point at |
+
+The Clerk publishable key is **not** called `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` here on
+purpose. Anything with that prefix is inlined into the JavaScript bundle at build time,
+which would bake one environment's key into the image and undo building once and
+promoting the same artifact. It is passed to `<ClerkProvider>` as a prop instead, read
+from the server at run time.
 
 **Nothing above is a build argument.** `docker build --build-arg` writes the value into
 the image's layer history, where `docker history` will read it back out months later even
@@ -113,13 +140,13 @@ image* or you get "Failed to find Server Action" errors — build once, deploy t
 page cache lives in each container's memory, so replicas can briefly disagree about cached
 pages. Neither matters for a single container, which is what the pilot needs.
 
-Then open `/login`. Nothing else is reachable without a session.
+Then open `/sign-in`. Nothing else is reachable without a session.
 
-**Email:** until `RESEND_API_KEY` is set, sign-in codes print to the server log instead of
-being sent — which means nobody but you can log in. Resend needs a verified domain before
-it will send to arbitrary addresses.
+**Email:** Clerk sends its own sign-in codes, so signing in works before Resend is set up.
+`RESEND_API_KEY` only affects the portal's own notifications — while it is empty those are
+written to the container log instead of sent.
 
-## 3. Bringing it to life
+## 4. Bringing it to life
 
 In this order, because each step depends on the one before:
 
@@ -140,7 +167,7 @@ npm run migrate-sheets -- --commit
 The commit produces a reconciliation report in `private/reports/`. **Read it against your
 own numbers before inviting anyone.**
 
-## 4. The pilot
+## 5. The pilot
 
 Invite one agency you trust. A week on real data: they enter passports, you run a real
 handoff export and a real booking import. Their sheet stays open as a safety net and is not

@@ -17,7 +17,9 @@
 // Read at runtime, never baked into the image, so one image runs anywhere.
 const REQUIRED = {
   MONGODB_URI: 'the Atlas connection string',
-  AUTH_SECRET: 'peppers session and OTP hashes — `openssl rand -base64 32`',
+  AUTH_SECRET: 'signs the view-as cookie — `openssl rand -base64 32`',
+  CLERK_PUBLISHABLE_KEY: 'from the Clerk dashboard — pk_test_… or pk_live_…',
+  CLERK_SECRET_KEY: 'from the Clerk dashboard — sk_test_… or sk_live_…, server-side only',
 } as const;
 
 const RECOMMENDED = {
@@ -50,8 +52,19 @@ export function register(): void {
 
   if (!process.env.RESEND_API_KEY?.trim()) {
     console.warn(
-      '[config] RESEND_API_KEY is not set — sign-in codes will be printed to this log ' +
-        'instead of emailed, so only someone who can read it can sign in.',
+      '[config] RESEND_API_KEY is not set — notification emails will be logged rather ' +
+        'than sent. Sign-in is unaffected: Clerk sends its own codes.',
+    );
+  }
+
+  // A live Clerk instance against a test key, or the reverse, fails in ways that look
+  // like anything except what they are.
+  const pk = process.env.CLERK_PUBLISHABLE_KEY ?? '';
+  const sk = process.env.CLERK_SECRET_KEY ?? '';
+  if (pk.startsWith('pk_test_') !== sk.startsWith('sk_test_')) {
+    console.warn(
+      '[config] Clerk keys are from different instances — one is a test key and the ' +
+        'other is live. Sign-in will fail in confusing ways.',
     );
   }
 }

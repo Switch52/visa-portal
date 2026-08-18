@@ -11,7 +11,7 @@ except importing a real booking file.
 
 ```bash
 npm install
-cp .env.example .env.local     # fill in MONGODB_URI and AUTH_SECRET
+cp .env.example .env.local     # MONGODB_URI, the two Clerk keys, AUTH_SECRET
 npm run migrate                # create collections, validators and indexes
 npm run create-admin -- --email you@example.com --name "Your Name"
 ```
@@ -22,14 +22,15 @@ here (`migrate`, `preflight`, `seed-route`, `migrate-sheets`) connect out to tha
 and start no server of their own. Tests use a MongoDB that exists only inside the test
 process and is destroyed when it exits.
 
-Sign in at the deployment's `/login`. With `RESEND_API_KEY` unset, sign-in codes print to
-the server log instead of being emailed — which means only someone who can read the logs
-can get in.
+Sign in at the deployment's `/sign-in`, which is Clerk. Signing in proves who you are and
+nothing more: access needs an invited record in `users`, so an uninvited account lands on
+`/no-access`. `RESEND_API_KEY` affects only the portal's own notifications — Clerk sends
+its own sign-in codes.
 
 | Script | What it does |
 |---|---|
 | `npm run dev` / `build` / `start` | The Next.js app |
-| `npm test` | Every invariant — 264 tests, all passing |
+| `npm test` | Every invariant — 259 tests, all passing |
 | `npm run smoke` | Checks a **deployment's** HTTP surface — `SMOKE_BASE_URL=… npm run smoke`. Never starts a local server |
 | `npm run typecheck` / `lint` | TypeScript, ESLint |
 | `npm run migrate` | Apply migrations (`-- --status`, `-- --down <id>`) |
@@ -53,7 +54,7 @@ src/lib/notifications/  Emails, each switchable, sent only after the work commit
 src/lib/mongodb  The only module that opens a connection (cached for serverless).
 src/lib/db/      Typed collection handles. Unscoped, and off limits to the app.
 src/lib/dal/     The data-access layer. Every function takes the acting user.
-src/lib/auth/    OTP, sessions, rate limiting. Owns its own collections.
+src/lib/auth/    Resolving the Clerk session into an actor, and the view-as cookie.
 src/app/         Screens and server actions. Reaches data only through the DAL.
 migrations/      Numbered, committed, runnable forward.
 scripts/         Profiler, admin bootstrap, smoke test.
@@ -70,25 +71,30 @@ A caller passing someone else's `agencyId` gets an impossible filter, not a wide
 The boundary is enforced by ESLint, not by convention: nothing outside `src/lib/db`,
 `src/lib/dal` and `src/lib/auth` may import the Mongo client or a collection handle.
 
-### Why auth is hand-rolled rather than Auth.js
+### Clerk authenticates; this app authorizes
 
-Auth.js v5 was the starting assumption; three requirements pushed against it, and each one
-is load-bearing here:
+Clerk owns sign-in — codes, rate limiting, device management, session revocation. That
+replaced about 490 lines of our own OTP and session code, which had been written because
+Auth.js could not do those three things well. Clerk can.
 
-1. **Deactivation must kill live sessions instantly.** Auth.js defaults to a
-   self-contained JWT, which keeps working until it expires because nothing checks it. Its
-   database-session mode fixes that, but at that point the session table is ours anyway.
-2. **Its email provider is built for magic links, not 6-digit codes** with a 10-minute
-   expiry, five attempts, per-email and per-IP rate limiting, hashed storage and
-   constant-time comparison. Every one of those rules would have been custom code inside a
-   custom provider.
-3. **View-as needs a server-side session** to record which agency the admin is looking at,
-   and to mark that session read-only.
+What did **not** move is the half that decides what anyone may see. `users` remains the
+source of truth for role, agency and `active`, and is re-read on **every request** — never
+trusted from a token claim. Two properties depend on that:
 
-What is here instead is ~250 lines: an opaque 256-bit token in an httpOnly cookie, its
-SHA-256 stored server-side, the user re-read on every request. Fewer moving parts than a
-custom provider plus a custom adapter, and it makes the requirements true rather than
-approximately true.
+- **Invite-only.** Anyone may create a Clerk account. Only an account whose email matches
+  an invited record resolves to an actor; everyone else is signed in and lands on
+  `/no-access` with nothing.
+- **Deactivation is immediate.** `active: false` ends access on the next click, not
+  whenever a token expires.
+
+The link is made once, on first sign-in: match by email, store `clerkUserId`, and every
+later request is a single indexed lookup. A unique partial index means one Clerk identity
+maps to at most one record, and an already-linked record refuses a second claimant.
+
+**View-as is still ours**, because Clerk has no concept of it — an admin reading one
+agency's data, unable to write. It moved from the session row to an HMAC-signed cookie,
+deliberately separate from Clerk's, so a token refresh or sign-out cannot strand someone
+inside another agency's data.
 
 ### Rules that live in the database
 
@@ -111,7 +117,7 @@ normalized form is stored alongside the original.
 | | | |
 |---|---|---|
 | 0 | Profile the real sheets | ✅ `npm run profile`, report in `private/reports/` |
-| 1 | Foundation: schema, DAL, OTP auth, invite-only users, isolation tests | ✅ |
+| 1 | Foundation: schema, DAL, auth, invite-only users, isolation tests | ✅ |
 | 2 | Passports: grid entry, paste, duplicate rule, status flow | ✅ |
 | 3 | Routes & the handoff queue, CSV export | ✅ |
 | 4 | Bulk booking import | ✅ parser needs real files to validate against |
@@ -141,7 +147,8 @@ review, not less.
 ## Deploying
 
 The Atlas cluster is live — schema, indexes, validators, an administrator and both routes.
-The app is not hosted yet. [`DEPLOY.md`](./DEPLOY.md) is the runbook.
+The app is deployed as a container but not yet signed into. [`DEPLOY.md`](./DEPLOY.md) is
+the runbook.
 
 It ships as a container: `output: 'standalone'` in `next.config.ts`, a three-stage
 [`Dockerfile`](./Dockerfile), and [`docker-compose.yml`](./docker-compose.yml) for the

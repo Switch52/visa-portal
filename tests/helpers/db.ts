@@ -7,8 +7,12 @@
  * whether the database refuses a duplicate.
  */
 
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { ObjectId, type MongoClient } from 'mongodb';
+import { ObjectId, type Db, type MongoClient } from 'mongodb';
 
 let replSet: MongoMemoryReplSet | null = null;
 
@@ -33,15 +37,21 @@ export async function startTestDb(): Promise<TestContext> {
   const { getMongoClient } = await import('@/lib/mongodb');
   const client = await getMongoClient();
 
-  // Migrations run in order, the same way `npm run migrate` applies them.
-  const { up: up001 } = await import('../../migrations/001_initial_collections');
-  const { up: up002 } = await import('../../migrations/002_bookings_and_charges');
-  const { up: up003 } = await import('../../migrations/003_payments_and_ledger');
-  const { up: up004 } = await import('../../migrations/004_family_applications');
-  await up001(client.db('visa_portal_test'));
-  await up002(client.db('visa_portal_test'));
-  await up003(client.db('visa_portal_test'));
-  await up004(client.db('visa_portal_test'));
+  // Every migration, discovered and ordered the way `npm run migrate` does it.
+  //
+  // Deliberately not a hand-written list. A list has to be remembered, and the migration
+  // it forgets is invisible: the suite goes green against a schema that production does
+  // not have, which is the one thing these tests exist to rule out.
+  const db = client.db('visa_portal_test');
+  const dir = join(process.cwd(), 'migrations');
+  const files = readdirSync(dir)
+    .filter((f) => /^\d{3}_.+\.ts$/.test(f))
+    .sort();
+
+  for (const file of files) {
+    const { up } = (await import(pathToFileURL(join(dir, file)).href)) as { up: (db: Db) => Promise<void> };
+    await up(db);
+  }
 
   return {
     client,

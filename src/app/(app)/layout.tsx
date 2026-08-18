@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
-import { logoutAction } from '@/app/login/actions';
+import { SignOutButton } from '@clerk/nextjs';
+
 import { Button } from '@/components/ui/button';
 import { requireUser } from '@/lib/auth/current-user';
 import { getAgency } from '@/lib/dal/agencies';
@@ -62,11 +63,13 @@ export default async function AppLayout({ children }: LayoutProps<'/'>) {
             ))}
           </div>
           <span className="text-sm text-muted-foreground">{actor.email}</span>
-          <form action={logoutAction}>
-            <Button type="submit" variant="ghost" size="sm">
+          {/* Clerk ends its own session; the view-as cookie is dropped with it because
+              it is scoped to the browser session rather than persisted. */}
+          <SignOutButton redirectUrl="/sign-in">
+            <Button type="button" variant="ghost" size="sm">
               Sign out
             </Button>
-          </form>
+          </SignOutButton>
         </nav>
       </header>
 

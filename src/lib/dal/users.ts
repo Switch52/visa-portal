@@ -54,6 +54,31 @@ export async function findActiveUserByEmail(email: string): Promise<UserDoc | nu
   return collection.findOne(notDeleted({ emailNormalized: normalizeEmail(email), active: true }));
 }
 
+/**
+ * The fast path for every authenticated request: Clerk hands us its user id, and this
+ * turns it into the record that decides what they may see.
+ */
+export async function findActiveUserByClerkId(clerkUserId: string): Promise<UserDoc | null> {
+  const collection = await users();
+  return collection.findOne(notDeleted({ clerkUserId, active: true }));
+}
+
+/**
+ * Attach a Clerk identity to an invited record, on that person's first sign-in.
+ *
+ * Guarded on the record still being unlinked, so two simultaneous first requests cannot
+ * both claim it and a second Clerk account can never take over an existing user by
+ * signing up with the same address later. `uniq_user_clerk_id` is the backstop.
+ */
+export async function linkClerkIdentity(id: ObjectId, clerkUserId: string): Promise<UserDoc | null> {
+  const collection = await users();
+  return collection.findOneAndUpdate(
+    notDeleted({ _id: id, active: true, clerkUserId: { $in: [null, undefined] } }),
+    { $set: { clerkUserId, updatedAt: new Date() } },
+    { returnDocument: 'after' },
+  );
+}
+
 export async function getUserById(id: ObjectId): Promise<UserDoc | null> {
   const collection = await users();
   return collection.findOne(notDeleted({ _id: id }));

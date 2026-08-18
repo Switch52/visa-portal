@@ -54,6 +54,15 @@ export const userSchema: JsonSchema = {
     // because $jsonSchema cannot express the dependency on its own.
     agencyId: nullableObjectId,
     active: { bsonType: 'bool' },
+    /**
+     * The Clerk user this record is linked to, or null until they first sign in.
+     *
+     * Clerk answers "who is this"; this collection answers "what may they do". Keeping
+     * the second half here is what preserves invite-only access — a Clerk account with
+     * no row here gets nothing — and what makes deactivation immediate, since `active`
+     * is re-read on every request rather than trusted from a token.
+     */
+    clerkUserId: nullableString,
     lastLoginAt: nullableDate,
     invitedBy: nullableObjectId,
     invitedAt: nullableDate,
